@@ -136,29 +136,98 @@ Full case list: `visitor_{001..005}`, `student_{001..005}`, `worker_{001..005}`,
 
 ## Examples
 
-### Live conversation (local demo)
+These are **real email round-trips** through the live gateway (client `fengweit@gmail.com` ↔ agent `fengwei.demo.uk.visa@gmail.com`) with real PDF attachments. The agent's replies are verbatim — an interviewer can paste any of these exchanges and reproduce the exact behavior.
+
+### A real downloaded email (verbatim headers)
+
+An actual reply pulled from the client's inbox. Note the threading headers (`In-Reply-To` / `References`) — this is what keeps the conversation in one thread and never spawns new ones:
 
 ```
-You: I want a student visa
-Agent: I can help with your Student Route application. You'll need: passport, cas,
-       maintenance funds (28-day). Attach them here and I'll check each one.
+From:        fengwei.demo.uk.visa@gmail.com
+To:          fengweit@gmail.com
+Subject:     Re: e2e-student-complete
+In-Reply-To: <e2e-student-complete-d4@e2e>
+References:  <e2e-student-complete-d4@e2e>
 
-You: [attaches passport.pdf] here is my passport
-Agent: I've checked your documents. Still outstanding:
-  • CAS: Provide your cas.
-  • Maintenance funds (28-day): Provide your maintenance funds (28-day).
-
-You: [attaches cas.pdf, then bank_statement.pdf]
-Agent: All your documents are verified — your application package is ready to submit.
+All your documents are verified — your application package is ready to submit.
 ```
 
-### Full corpus case (`uv run python scripts/demo.py` → `case student_001_complete`)
+### 1. Complete application — Student Route → ready
 
 ```
-Agent: I can help with your Student Route application. You'll need: passport, cas, maintenance funds (28-day)…
-  [submitted passport.pdf]       → still outstanding: CAS, maintenance funds
-  [submitted cas.pdf]            → still outstanding: maintenance funds
-  [submitted bank_statement.pdf] → ready to submit
+You:     I want a student visa
+Agent:   I can help with your Student Route application. You'll need: passport, cas,
+         maintenance funds (28-day). Attach them here and I'll check each one.
+
+You:     here is my passport            [attached: passport.pdf]
+Agent:   I've checked your documents. Still outstanding:
+           • CAS: Provide your cas.
+           • Maintenance funds (28-day): Provide your maintenance funds (28-day).
+
+You:     here is my bank statement      [attached: bank_statement.pdf]
+Agent:   I've checked your documents. Still outstanding:
+           • CAS: Provide your cas.
+
+You:     here is my cas                 [attached: cas.pdf]
+Agent:   All your documents are verified — your application package is ready to submit.
+```
+
+### 2. Missing a mandatory document — Student → MISSING
+
+```
+You:     I want a student visa
+Agent:   I can help with your Student Route application. You'll need: passport, cas,
+         maintenance funds (28-day)…
+
+You:     here is my passport            [attached: passport.pdf]
+Agent:   I've checked your documents. Still outstanding:
+           • CAS: Provide your cas.
+           • Maintenance funds (28-day): Provide your maintenance funds (28-day).
+```
+
+### 3. Insufficient funds — Student → INVALID
+
+```
+You:     here is my bank statement      [attached: bank_statement.pdf, balance £8,000]
+Agent:   I've checked your documents. Still outstanding:
+           • Passport: Provide your passport.
+           • CAS: Provide your cas.
+           • Maintenance funds (28-day): Funds below required £10,539.
+```
+
+### 4. Name mismatch — Worker → INCONSISTENT
+
+```
+You:     I want a worker visa
+Agent:   I can help with your Skilled Worker application. You'll need: passport, cos,
+         english language, maintenance funds…
+
+You:     here is my cos                [attached: cos.pdf, worker "Janet Doe"]
+Agent:   I've checked your documents. Still outstanding:
+           • CoS: Name mismatch: 'Janet Doe' vs passport 'Jane Doe'.
+```
+
+### 5. Scanned (image-only) passport — Visitor → needs OCR
+
+```
+You:     I want a visitor visa, staying until 2026-10-05
+Agent:   I can help with your Standard Visitor application. You'll need: passport,
+         proof of funds, accommodation…
+
+You:     here is my passport           [attached: scanned/image-only passport.pdf]
+Agent:   I've checked your documents. Still outstanding:
+           • Passport: Scanned document needs OCR.
+```
+
+### 6. Passport expiring mid-stay — Visitor → EXPIRING
+
+```
+You:     I want a visitor visa, staying until 2026-10-05
+Agent:   I can help with your Standard Visitor application…
+
+You:     here is my passport           [attached: passport.pdf, expires 2026-09-25]
+Agent:   I've checked your documents. Still outstanding:
+           • Passport: Expires 2026-09-25, before stay end 2026-10-05.
 ```
 
 ---
