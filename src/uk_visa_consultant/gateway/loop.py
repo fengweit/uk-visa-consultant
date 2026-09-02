@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from uk_visa_consultant.agent import IntakeAgent
+from uk_visa_consultant.evals.output_contract import validate_reply
 from uk_visa_consultant.models import Message
 from uk_visa_consultant.visas import get_requirement_set
 from uk_visa_consultant.workflow.supervisor import CaseSupervisor
@@ -62,6 +63,8 @@ class Gateway:
             wr = self.supervisor.run(case["documents"], get_requirement_set(case["visa_type"]), client)
             reply = self._compose_status(wr)
 
+        if validate_reply(reply):
+            reply = "I'm sorry, I ran into a problem — a specialist will follow up shortly."
         return Message(id=f"{message.id}_reply", client_id=message.client_id,
                        channel=message.channel, body=reply)
 
