@@ -4,7 +4,7 @@ A **human-like UK visa application consultant agent**. It interacts over WhatsAp
 
 Built **delivery-stability-first**: every agent boundary uses structured output, every deliverable passes a fail-closed verification gate before it ships, and every claim carries provenance. The core is channel-agnostic and fully testable over a **local message loop** (no network) before any WhatsApp/email integration exists.
 
-> **Status:** in implementation, **stable and demo-ready** — `93` unit/regression tests, `20/20` workflow eval, `106/106` intake backtest, and `20/20` real-email corpus flows, all green. Email is live-tested with PDF and image attachments; WhatsApp outbound is live-tested.
+> **Status:** in implementation, **stable and demo-ready** — `110` unit/regression tests, `20/20` workflow eval, `106/106` intake backtest, `20/20` real-email corpus flows, and `27/27` live-email question/edge flows, all green. Email is live-tested with PDF and image attachments; WhatsApp outbound is live-tested.
 
 ---
 
@@ -323,11 +323,12 @@ Put `DEEPSEEK_API_KEY=***` in `.env`; `get_llm()` then uses DeepSeek for schema-
 ## Testing & stability
 
 ```bash
-uv run pytest -q                               # 93 unit/regression tests
+uv run pytest -q                               # 110 unit/regression tests
 uv run python scripts/eval_workflow.py         # 20/20 workflow eval (PROMOTED)
 uv run python scripts/backtest_agent.py        # 106/106 agent backtest
 uv run python scripts/backtest_intake.py       # 106/106 intake backtest
 uv run python scripts/e2e_email_real.py all    # 20/20 real Gmail + PDF corpus flows
+uv run python scripts/e2e_email_questions.py   # 27/27 live Gmail question/edge flows
 uv run python scripts/e2e_real_passport.py     # live JPG → OCR → DeepSeek → Gmail reply
 ```
 

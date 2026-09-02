@@ -102,18 +102,23 @@ def fetch_replies(client: str, password: str, expected: dict[str, tuple[Case, st
     return found
 
 
-def fetch_message_replying_to(client: str, password: str, source_mid: str, timeout: int = 60):
+def fetch_message_replying_to(
+    client: str, password: str, source_mid: str, subject: str, timeout: int = 90,
+):
     deadline = time.time() + timeout
     while time.time() < deadline:
         with imaplib.IMAP4_SSL("imap.gmail.com", 993) as conn:
             conn.login(client, password)
             conn.select("INBOX")
-            typ, ids = conn.search(None, "HEADER", "In-Reply-To", f'"{source_mid}"')
+            typ, ids = conn.search(None, "SUBJECT", f'"{subject}"')
             if typ == "OK" and ids[0]:
-                uid = ids[0].split()[-1]
-                _, raw = conn.fetch(uid, "(BODY.PEEK[])")
-                if raw and isinstance(raw[0], tuple):
-                    return BytesParser(policy=policy.default).parsebytes(cast(bytes, raw[0][1]))
+                for uid in reversed(ids[0].split()):
+                    _, raw = conn.fetch(uid, "(BODY.PEEK[])")
+                    if not raw or not isinstance(raw[0], tuple):
+                        continue
+                    message = BytesParser(policy=policy.default).parsebytes(cast(bytes, raw[0][1]))
+                    if str(message.get("In-Reply-To", "")) == source_mid:
+                        return message
         time.sleep(2)
     raise TimeoutError(f"no reply to {source_mid}")
 
@@ -126,7 +131,7 @@ def run_quoted_worker_followup(client: str, password: str, agent: str, tag: str)
     first["Message-ID"] = root_mid; first.set_content("hi")
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
         smtp.login(client, password); smtp.send_message(first)
-    agent_first = fetch_message_replying_to(client, password, root_mid)
+    agent_first = fetch_message_replying_to(client, password, root_mid, subject)
     agent_mid = str(agent_first["Message-ID"])
 
     follow_mid = f"<{tag}-quoted-worker@question-e2e>"
@@ -141,7 +146,7 @@ def run_quoted_worker_followup(client: str, password: str, agent: str, tag: str)
     )
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
         smtp.login(client, password); smtp.send_message(follow)
-    agent_second = fetch_message_replying_to(client, password, follow_mid)
+    agent_second = fetch_message_replying_to(client, password, follow_mid, subject)
     assert root_mid in str(agent_second.get("References", ""))
     part = agent_second.get_body(preferencelist=("plain",))
     return (part.get_content() if part else "").strip()
@@ -158,7 +163,7 @@ def run_attachment_only(client: str, password: str, agent: str, tag: str) -> str
         msg.add_attachment(handle.read(), maintype="application", subtype="pdf", filename="bank-statement.pdf")
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
         smtp.login(client, password); smtp.send_message(msg)
-    response = fetch_message_replying_to(client, password, source_mid)
+    response = fetch_message_replying_to(client, password, source_mid, subject)
     part = response.get_body(preferencelist=("plain",))
     return (part.get_content() if part else "").strip()
 
