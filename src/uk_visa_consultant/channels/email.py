@@ -60,6 +60,8 @@ class ParsedEmail:
     body: str = ""
     attachments: list[tuple[str, str, bytes]] = field(default_factory=list)  # (name, mime, payload)
     subject: str = ""
+    in_reply_to: str = ""
+    references: list[str] = field(default_factory=list)
 
 
 def parse_email(raw: bytes) -> ParsedEmail:
@@ -75,6 +77,8 @@ def parse_email(raw: bytes) -> ParsedEmail:
         from_addr = parseaddr(str(from_hdr))[1]
 
     subject = str(msg.get("Subject") or "")
+    in_reply_to = str(msg.get("In-Reply-To") or "").strip()
+    references = [r.strip() for r in str(msg.get("References") or "").split() if r.strip()]
 
     ts = datetime.now(timezone.utc)
     date_hdr = msg.get("Date")
@@ -106,6 +110,8 @@ def parse_email(raw: bytes) -> ParsedEmail:
         body=body,
         attachments=attachments,
         subject=subject,
+        in_reply_to=in_reply_to,
+        references=references,
     )
 
 
@@ -201,6 +207,7 @@ class EmailAdapter(ChannelAdapter):
         client_id = self.identity.resolve_email(parsed.from_addr)
         self._last_subject[client_id] = parsed.subject
         msg_id = _derive_message_id(parsed.message_id)
+        thread_root = parsed.references[0] if parsed.references else (parsed.in_reply_to or parsed.message_id)
 
         attachments: list[Attachment] = []
         for filename, mime, payload in parsed.attachments:
@@ -216,6 +223,8 @@ class EmailAdapter(ChannelAdapter):
             body=parsed.body,
             attachments=attachments,
             thread_id=parsed.message_id,
+            thread_root=thread_root,
+            references=parsed.references,
         )
 
     def _store_attachment(
@@ -276,6 +285,7 @@ class EmailAdapter(ChannelAdapter):
                     (a.local_path, a.mime) for a in message.attachments
                 ],
                 thread_id=message.thread_id,
+                references=message.references,
             )
             return SendReceipt(ok=True, external_id=message.id)
         except Exception as exc:  # noqa: BLE001 — transport boundary, fail closed
@@ -297,7 +307,7 @@ class EmailAdapter(ChannelAdapter):
 
     def _smtp_send(
         self, to: str, subject: str, body: str, attachments: Iterable[tuple[str, str]],
-        thread_id: str | None = None,
+        thread_id: str | None = None, references: list[str] | None = None,
     ) -> None:
         msg = EmailMessage()
         msg["From"] = self.from_addr
@@ -305,7 +315,11 @@ class EmailAdapter(ChannelAdapter):
         msg["Subject"] = subject
         if thread_id:
             msg["In-Reply-To"] = thread_id
-            msg["References"] = thread_id
+            chain = list(references or [])
+            if thread_id not in chain:
+                chain.append(thread_id)
+            msg["References"] = " ".join(chain)
+            msg["Message-ID"] = f"<agent-{thread_id.strip('<>')}@ukvisa>"
         msg.set_content(body or "(no message body)")
         for path, mime in attachments:
             data = Path(path).read_bytes()

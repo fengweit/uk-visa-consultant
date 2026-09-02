@@ -22,12 +22,14 @@ def _pdf(path, lines):
     c.save()
 
 
-def _email(from_addr, subject, body, attachment=None, mid="<e2e@x>"):
+def _email(from_addr, subject, body, attachment=None, mid="<e2e@x>", references=None):
     m = EmailMessage()
     m["From"] = from_addr
     m["To"] = "visa@example.com"
     m["Subject"] = subject
     m["Message-ID"] = mid
+    if references:
+        m["References"] = references
     m.set_content(body)
     if attachment:
         m.add_attachment(attachment.read_bytes(), maintype="application",
@@ -68,17 +70,17 @@ def test_email_pdf_conversation_progresses_to_ready(tmp_path):
 
     p = tmp_path / "passport.pdf"
     _passport(p)
-    r1 = gw.handle(adapter.receive_email(_email("client@example.com", "s", "here is my passport", p, "<b@x>")))
+    r1 = gw.handle(adapter.receive_email(_email("client@example.com", "s", "here is my passport", p, "<b@x>", references="<a@x>")))
     assert "CAS" in r1.body and "funds" in r1.body.lower()  # both still missing
 
     b = tmp_path / "bank.pdf"
     _bank(b)
-    r2 = gw.handle(adapter.receive_email(_email("client@example.com", "s", "here is my bank statement", b, "<c@x>")))
+    r2 = gw.handle(adapter.receive_email(_email("client@example.com", "s", "here is my bank statement", b, "<c@x>", references="<a@x>")))
     assert "CAS" in r2.body and "funds" not in r2.body.lower()  # funds resolved, CAS missing
 
     c = tmp_path / "cas.pdf"
     _cas(c)
-    r3 = gw.handle(adapter.receive_email(_email("client@example.com", "s", "here is my cas", c, "<d@x>")))
+    r3 = gw.handle(adapter.receive_email(_email("client@example.com", "s", "here is my cas", c, "<d@x>", references="<a@x>")))
     assert "ready to submit" in r3.body.lower()
 
 
@@ -88,5 +90,29 @@ def test_email_pdf_insufficient_funds_reports_invalid(tmp_path):
     gw.handle(adapter.receive_email(_email("client@example.com", "s", "I want a student visa", mid="<a@x>")))
     b = tmp_path / "bank.pdf"
     _bank(b, closing="8000.00", minbal="7500.00")
-    r = gw.handle(adapter.receive_email(_email("client@example.com", "s", "here is my bank statement", b, "<b@x>")))
+    r = gw.handle(adapter.receive_email(_email("client@example.com", "s", "here is my bank statement", b, "<b@x>", references="<a@x>")))
     assert "below" in r.body.lower()
+
+
+def test_same_email_two_threads_are_isolated(tmp_path):
+    adapter = _adapter(tmp_path)
+    gw = Gateway()
+
+    # thread A: student
+    gw.handle(adapter.receive_email(_email("client@example.com", "s", "I want a student visa", mid="<A1@x>")))
+    # thread B: spouse — same email, NEW thread
+    rB = gw.handle(adapter.receive_email(_email("client@example.com", "s", "I want a spouse visa", mid="<B1@x>")))
+    assert "Spouse" in rB.body and "Student" not in rB.body
+
+    p = tmp_path / "passport.pdf"
+    _passport(p)
+
+    # reply in thread A (References -> A1 root): submit passport -> student gaps
+    rA = gw.handle(adapter.receive_email(
+        _email("client@example.com", "s", "here is my passport", p, "<A2@x>", references="<A1@x>")))
+    assert "CAS" in rA.body and "funds" in rA.body.lower()
+
+    # reply in thread B (References -> B1 root): submit passport -> spouse gaps (no CAS)
+    rB2 = gw.handle(adapter.receive_email(
+        _email("client@example.com", "s", "here is my passport", p, "<B2@x>", references="<B1@x>")))
+    assert "CAS" not in rB2.body

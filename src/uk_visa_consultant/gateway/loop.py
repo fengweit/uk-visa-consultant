@@ -57,7 +57,8 @@ class Gateway:
 
     def handle(self, message: Message) -> Message:
         result = self.agent.handle(message)
-        case = self.cases.setdefault(message.client_id, _new_case())
+        key = message.thread_root or message.client_id
+        case = self.cases.setdefault(key, _new_case())
 
         for doc in result.documents:
             if doc.type == "passport" and doc.fields.get("full_name"):
@@ -86,7 +87,8 @@ class Gateway:
         if validate_reply(reply):
             reply = "I'm sorry, I ran into a problem — a specialist will follow up shortly."
         return Message(id=f"{message.id}_reply", client_id=message.client_id,
-                       channel=message.channel, body=reply, thread_id=message.thread_id)
+                       channel=message.channel, body=reply, thread_id=message.thread_id,
+                       thread_root=message.thread_root, references=message.references)
 
     @staticmethod
     def _ask_route(result) -> str:

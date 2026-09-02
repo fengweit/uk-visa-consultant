@@ -104,7 +104,7 @@ def test_reply_threads_under_original_email(monkeypatch, tmp_path):
 
     captured = {}
 
-    def fake_smtp_send(self, to, subject, body, attachments, thread_id=None):
+    def fake_smtp_send(self, to, subject, body, attachments, thread_id=None, references=None):
         captured["thread_id"] = thread_id
         captured["subject"] = subject
 
