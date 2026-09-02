@@ -1,5 +1,6 @@
 """Live real-document E2E: client Gmail -> agent Gmail -> client Gmail.
-Uses the repo's fake passport JPG, local OCR, and live DeepSeek extraction.
+Uses the repo's fake passport JPG and a public university sample bank statement,
+local OCR, native PDF extraction, and live DeepSeek field extraction.
 """
 import imaplib, os, smtplib, tempfile, time, uuid
 from typing import cast
@@ -15,16 +16,20 @@ from uk_visa_consultant.gateway.loop import Gateway
 load_env()
 CLIENT=os.environ['EMAIL_CLIENT_USER']; CPASS=os.environ['EMAIL_CLIENT_PASSWORD']
 AGENT=os.environ['EMAIL_IMAP_USER']; APASS=os.environ['EMAIL_IMAP_PASSWORD']
-SAMPLE=Path('examples/documents/fake-passport.jpg')
-TAG=f"real-passport-{uuid.uuid4().hex[:10]}"; SUBJECT=f"UK visitor test {TAG}"
-ROOT=f"<{TAG}-root@e2e>"; DOCMID=f"<{TAG}-doc@e2e>"
+PASSPORT=Path('examples/documents/fake-passport.jpg')
+BANK=Path('examples/documents/university-greenwich-example-bank-statement.pdf')
+TAG=f"real-documents-{uuid.uuid4().hex[:10]}"; SUBJECT=f"UK student test {TAG}"
+ROOT=f"<{TAG}-root@e2e>"; PASSMID=f"<{TAG}-passport@e2e>"; BANKMID=f"<{TAG}-bank@e2e>"
 
 def send_client(body, mid, refs=None, attach=None):
     m=EmailMessage(); m['From']=CLIENT; m['To']=AGENT; m['Subject']=SUBJECT; m['Message-ID']=mid
     if refs: m['In-Reply-To']=refs; m['References']=refs
     m.set_content(body)
     if attach:
-        m.add_attachment(attach.read_bytes(), maintype='image', subtype='jpeg', filename=attach.name)
+        if attach.suffix.lower() == '.pdf':
+            m.add_attachment(attach.read_bytes(), maintype='application', subtype='pdf', filename=attach.name)
+        else:
+            m.add_attachment(attach.read_bytes(), maintype='image', subtype='jpeg', filename=attach.name)
     with smtplib.SMTP_SSL('smtp.gmail.com',465) as s:
         s.login(CLIENT,CPASS); s.send_message(m)
 
@@ -48,23 +53,37 @@ def body(raw):
 seen=Path(tempfile.mkdtemp())/'seen.json'
 adapter=EmailAdapter(seen_path=seen); gateway=Gateway()
 
-send_client('I am applying for a visitor visa.',ROOT)
+send_client('I am applying for a student visa.',ROOT)
 raw=fetch(AGENT,APASS,'INBOX',ROOT); incoming=adapter.receive_email(raw)
 assert incoming is not None
 reply=gateway.handle(incoming); receipt=adapter.send(reply)
 assert receipt.ok and receipt.external_id, receipt.error
 fetch(CLIENT,CPASS,'INBOX',receipt.external_id)
 
-send_client('Here is my passport.',DOCMID,ROOT,SAMPLE)
-raw=fetch(AGENT,APASS,'INBOX',DOCMID); incoming=adapter.receive_email(raw)
+send_client('Here is my passport.',PASSMID,ROOT,PASSPORT)
+raw=fetch(AGENT,APASS,'INBOX',PASSMID); incoming=adapter.receive_email(raw)
 assert incoming is not None
 assert len(incoming.attachments)==1 and incoming.attachments[0].mime=='image/jpeg'
 reply=gateway.handle(incoming); receipt=adapter.send(reply)
 assert receipt.ok and receipt.external_id, receipt.error
-raw_reply=fetch(CLIENT,CPASS,'INBOX',receipt.external_id); text=body(raw_reply)
-low=text.lower()
-assert 'funds' in low and 'accommodation' in low, text
-assert 'passport: provide' not in low and 'needs ocr' not in low, text
+raw_reply=fetch(CLIENT,CPASS,'INBOX',receipt.external_id); passport_reply=body(raw_reply)
+low=passport_reply.lower()
+assert 'cas' in low and 'funds' in low, passport_reply
+assert 'passport: provide' not in low and 'needs ocr' not in low, passport_reply
+
+send_client('Here is my bank statement.',BANKMID,ROOT,BANK)
+raw=fetch(AGENT,APASS,'INBOX',BANKMID); incoming=adapter.receive_email(raw)
+assert incoming is not None
+assert len(incoming.attachments)==1 and incoming.attachments[0].mime=='application/pdf'
+reply=gateway.handle(incoming); receipt=adapter.send(reply)
+assert receipt.ok and receipt.external_id, receipt.error
+raw_reply=fetch(CLIENT,CPASS,'INBOX',receipt.external_id); bank_reply=body(raw_reply)
+low=bank_reply.lower()
+assert 'cas' in low and 'funds below required £10,539' in low, bank_reply
+assert 'passport: provide' not in low and 'needs ocr' not in low, bank_reply
+
 print(f'PASS {TAG}')
-print('attachment=image/jpeg; OCR=macos-vision; LLM=deepseek-chat')
-print('reply='+' '.join(text.split()))
+print('passport=image/jpeg -> macos-vision OCR -> deepseek-chat')
+print('bank=public university PDF -> pdf-inspector -> deepseek-chat')
+print('passport_reply='+' '.join(passport_reply.split()))
+print('bank_reply='+' '.join(bank_reply.split()))

@@ -85,11 +85,25 @@ class DeepSeekLLMClient(LLMClient):
         return resp.choices[0].message.content or "{}"
 
 
+def _json_payload(raw: str) -> str:
+    """Normalize one optional Markdown JSON fence; reject surrounding prose."""
+    text = raw.strip()
+    if not text.startswith("```"):
+        return text
+    lines = text.splitlines()
+    if len(lines) < 3 or lines[-1].strip() != "```":
+        return text
+    opener = lines[0].strip().lower()
+    if opener not in {"```", "```json"}:
+        return text
+    return "\n".join(lines[1:-1]).strip()
+
+
 def _validate(raw: str, schema: type[BaseModel] | None, model: str | None) -> LLMResult:
     if schema is None:
         return LLMResult(raw=raw, parsed=None, model=model)
     try:
-        data = json.loads(raw)
+        data = json.loads(_json_payload(raw))
     except json.JSONDecodeError as e:
         return LLMResult(raw=raw, schema_errors=[f"invalid JSON: {e}"], model=model)
     try:

@@ -35,3 +35,19 @@ def test_stub_llm_fails_closed_on_bad_schema():
     res = stub.complete("bank statement text", schema=R)
     assert res.parsed is None
     assert res.schema_errors != []
+
+
+def test_llm_accepts_single_json_fence_but_rejects_prose():
+    class R(BaseModel):
+        status: str
+
+    fenced = StubLLMClient({"probe": "```json\n{\"status\": \"ok\"}\n```"})
+    good = fenced.complete("probe", schema=R)
+    assert good.parsed is not None
+    assert good.parsed.status == "ok"
+    assert good.schema_errors == []
+
+    prose = StubLLMClient({"probe": "Here is the result:\n```json\n{\"status\": \"ok\"}\n```"})
+    bad = prose.complete("probe", schema=R)
+    assert bad.parsed is None
+    assert bad.schema_errors

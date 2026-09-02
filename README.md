@@ -4,7 +4,7 @@ A **human-like UK visa application consultant agent**. It interacts over WhatsAp
 
 Built **delivery-stability-first**: every agent boundary uses structured output, every deliverable passes a fail-closed verification gate before it ships, and every claim carries provenance. The core is channel-agnostic and fully testable over a **local message loop** (no network) before any WhatsApp/email integration exists.
 
-> **Status:** in implementation, **stable and demo-ready** — `92` unit/regression tests, `20/20` workflow eval, `106/106` intake backtest, and `20/20` real-email corpus flows, all green. Email is live-tested with PDF and image attachments; WhatsApp outbound is live-tested.
+> **Status:** in implementation, **stable and demo-ready** — `93` unit/regression tests, `20/20` workflow eval, `106/106` intake backtest, and `20/20` real-email corpus flows, all green. Email is live-tested with PDF and image attachments; WhatsApp outbound is live-tested.
 
 ---
 
@@ -234,20 +234,33 @@ Agent:   I've checked your documents. Still outstanding:
            • Passport: Expires 2026-09-25, before stay end 2026-10-05.
 ```
 
-### 7. Real image passport — OCR + DeepSeek + live email
+### 7. Real documents — OCR + DeepSeek + one live email thread
 
-The repository includes [`examples/documents/fake-passport.jpg`](examples/documents/fake-passport.jpg), a deliberately fake UK passport image. The live test sends it from the client Gmail account to the agent Gmail account, runs local Vision OCR, asks DeepSeek for schema-valid passport fields, and reads the reply back from the client inbox.
+The repository includes two non-personal fixtures:
+
+- [`fake-passport.jpg`](examples/documents/fake-passport.jpg) — a deliberately fake UK passport image supplied for this project.
+- [`university-greenwich-example-bank-statement.pdf`](examples/documents/university-greenwich-example-bank-statement.pdf) — the University of Greenwich's [public UKVI Student Visa example](https://www.gre.ac.uk/docs/rep/sas/example-of-bank-statement), using fictional “Anne Example” data.
+
+The live test sends both from the client Gmail account to the agent Gmail account in **one Student-visa thread**. The passport goes through local Vision OCR → DeepSeek; the PDF goes through `pdf-inspector` → DeepSeek; each reply is read back from the client inbox.
 
 ```text
-Extracted: DOE JOHN · passport 537856940 · DOB 1986-07-16
-           expiry 2026-05-22 · BRITISH CITIZEN
+Passport extracted: DOE JOHN · passport 537856940 · DOB 1986-07-16
+                    expiry 2026-05-22 · BRITISH CITIZEN
 
-Agent:     I've checked your documents. Still outstanding:
-           • Proof of funds: Provide your proof of funds.
-           • Accommodation: Provide your accommodation.
+After passport:
+Agent: I've checked your documents. Still outstanding:
+       • CAS: Provide your cas.
+       • Maintenance funds (28-day): Provide your maintenance funds (28-day).
+
+Bank statement extracted: Anne Example · closing £9,260 · minimum £9,060
+
+After bank statement (same thread):
+Agent: I've checked your documents. Still outstanding:
+       • CAS: Provide your cas.
+       • Maintenance funds (28-day): Funds below required £10,539.
 ```
 
-The test asserts that the reply does **not** say “passport missing” or “needs OCR”. Run `uv run python scripts/e2e_real_passport.py` (requires both Gmail test accounts and `DEEPSEEK_API_KEY`).
+The test asserts that the agent never asks for the passport again, preserves the thread's accumulated documents, and applies the real funds threshold. Run `uv run python scripts/e2e_real_passport.py` (requires both Gmail test accounts and `DEEPSEEK_API_KEY`).
 
 ---
 
@@ -299,7 +312,7 @@ Put `DEEPSEEK_API_KEY=***` in `.env`; `get_llm()` then uses DeepSeek for schema-
 ## Testing & stability
 
 ```bash
-uv run pytest -q                               # 92 unit/regression tests
+uv run pytest -q                               # 93 unit/regression tests
 uv run python scripts/eval_workflow.py         # 20/20 workflow eval (PROMOTED)
 uv run python scripts/backtest_agent.py        # 106/106 agent backtest
 uv run python scripts/backtest_intake.py       # 106/106 intake backtest
