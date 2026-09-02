@@ -38,10 +38,12 @@ class IntakeAgent:
                 reply="Thanks for telling me. I've flagged this for a specialist, and we'll follow up with you shortly.",
             )
 
-        if intent.intent == "submit_document":
+        is_submission = intent.intent == "submit_document" or bool(message.attachments)
+        if is_submission:
+            submission_intent = "submit_document"
             if not message.attachments:
                 return AgentResult(
-                    intent=intent.intent, action="request_document",
+                    intent=submission_intent, action="request_document",
                     reply="Got it — please attach the document so I can check it.",
                     needs_clarification=intent.needs_clarification,
                 )
@@ -51,12 +53,12 @@ class IntakeAgent:
                         for a in message.attachments]
             except Exception:  # noqa: BLE001 — a bad attachment must not crash the loop
                 return AgentResult(
-                    intent=intent.intent, action="parse_failed",
+                    intent=submission_intent, action="parse_failed",
                     reply="Thanks for sending this. I couldn't read the file safely, so please send it again as a valid PDF, JPG, or PNG. We'll continue from the same thread.",
                 )
             types = ", ".join(sorted({d.type for d in docs}))
             return AgentResult(
-                intent=intent.intent, action="parse_document", documents=docs,
+                intent=submission_intent, action="parse_document", documents=docs,
                 reply=f"Thanks for sending your document(s). I've received and checked: {types}.",
             )
 

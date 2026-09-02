@@ -102,6 +102,67 @@ def fetch_replies(client: str, password: str, expected: dict[str, tuple[Case, st
     return found
 
 
+def fetch_message_replying_to(client: str, password: str, source_mid: str, timeout: int = 60):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        with imaplib.IMAP4_SSL("imap.gmail.com", 993) as conn:
+            conn.login(client, password)
+            conn.select("INBOX")
+            typ, ids = conn.search(None, "HEADER", "In-Reply-To", f'"{source_mid}"')
+            if typ == "OK" and ids[0]:
+                uid = ids[0].split()[-1]
+                _, raw = conn.fetch(uid, "(BODY.PEEK[])")
+                if raw and isinstance(raw[0], tuple):
+                    return BytesParser(policy=policy.default).parsebytes(cast(bytes, raw[0][1]))
+        time.sleep(2)
+    raise TimeoutError(f"no reply to {source_mid}")
+
+
+def run_quoted_worker_followup(client: str, password: str, agent: str, tag: str) -> str:
+    subject = f"question-e2e-{tag}-quoted-worker-followup"
+    root_mid = f"<{tag}-quoted-root@question-e2e>"
+    first = EmailMessage()
+    first["From"] = client; first["To"] = agent; first["Subject"] = subject
+    first["Message-ID"] = root_mid; first.set_content("hi")
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
+        smtp.login(client, password); smtp.send_message(first)
+    agent_first = fetch_message_replying_to(client, password, root_mid)
+    agent_mid = str(agent_first["Message-ID"])
+
+    follow_mid = f"<{tag}-quoted-worker@question-e2e>"
+    follow = EmailMessage()
+    follow["From"] = client; follow["To"] = agent; follow["Subject"] = f"Re: {subject}"
+    follow["Message-ID"] = follow_mid; follow["In-Reply-To"] = agent_mid
+    follow["References"] = f"{root_mid} {agent_mid}"
+    follow.set_content(
+        "worker visa!\n\n"
+        "On Wed, Sep 2, 2026 at 2:32 AM <visa@example.com> wrote:\n"
+        "> Which visa route are you applying for — visitor, student, worker, or spouse?\n"
+    )
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
+        smtp.login(client, password); smtp.send_message(follow)
+    agent_second = fetch_message_replying_to(client, password, follow_mid)
+    assert root_mid in str(agent_second.get("References", ""))
+    part = agent_second.get_body(preferencelist=("plain",))
+    return (part.get_content() if part else "").strip()
+
+
+def run_attachment_only(client: str, password: str, agent: str, tag: str) -> str:
+    subject = f"question-e2e-{tag}-attachment-only"
+    source_mid = f"<{tag}-attachment-only@question-e2e>"
+    path = os.path.join("examples", "documents", "university-greenwich-example-bank-statement.pdf")
+    msg = EmailMessage()
+    msg["From"] = client; msg["To"] = agent; msg["Subject"] = subject
+    msg["Message-ID"] = source_mid; msg.set_content("")
+    with open(path, "rb") as handle:
+        msg.add_attachment(handle.read(), maintype="application", subtype="pdf", filename="bank-statement.pdf")
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
+        smtp.login(client, password); smtp.send_message(msg)
+    response = fetch_message_replying_to(client, password, source_mid)
+    part = response.get_body(preferencelist=("plain",))
+    return (part.get_content() if part else "").strip()
+
+
 def main() -> int:
     load_env()
     client = os.environ["EMAIL_CLIENT_USER"]
@@ -130,7 +191,37 @@ def main() -> int:
             print("       " + " ".join(body.split()))
         else:
             print(f"[PASS] {case.name}: " + " ".join(body.split())[:180])
-    print(f"\n{len(CASES)-len(failures)}/{len(CASES)} live question E2E cases passed")
+
+    try:
+        quoted_reply = run_quoted_worker_followup(client, password, agent, tag)
+        if "Skilled Worker" not in quoted_reply or "Student Route" in quoted_reply:
+            failures.append(f"quoted-worker-followup: wrong reply={quoted_reply!r}")
+            print("[FAIL] quoted-worker-followup: " + " ".join(quoted_reply.split()))
+        else:
+            print("[PASS] quoted-worker-followup: " + " ".join(quoted_reply.split())[:180])
+    except Exception as exc:
+        failures.append(f"quoted-worker-followup: {exc}")
+        print(f"[FAIL] quoted-worker-followup: {exc}")
+
+    try:
+        attachment_reply = run_attachment_only(client, password, agent, tag)
+        missing_attachment = [
+            s for s in ("bank_statement", "visa route")
+            if s.lower() not in attachment_reply.lower()
+        ]
+        if missing_attachment:
+            failures.append(
+                f"attachment-only: missing={missing_attachment}, reply={attachment_reply!r}"
+            )
+            print(f"[FAIL] attachment-only: missing={missing_attachment}")
+        else:
+            print("[PASS] attachment-only: " + " ".join(attachment_reply.split())[:180])
+    except Exception as exc:
+        failures.append(f"attachment-only: {exc}")
+        print(f"[FAIL] attachment-only: {exc}")
+
+    total = len(CASES) + 2
+    print(f"\n{total-len(failures)}/{total} live question E2E cases passed")
     if failures:
         print("\nFAILURES")
         for failure in failures:

@@ -39,6 +39,16 @@ def test_submit_document_without_attachment_requests_one():
     assert result.documents == []
 
 
+def test_attachment_only_email_still_triggers_intake(tmp_path):
+    p = tmp_path / "passport.pdf"
+    _passport_pdf(p)
+    result = IntakeAgent().handle(_msg("", [
+        Attachment(kind="pdf", local_path=str(p), mime="application/pdf"),
+    ]))
+    assert result.action == "parse_document"
+    assert result.documents[0].type == "passport"
+
+
 def test_escalate_human():
     result = IntakeAgent().handle(_msg("I want to speak to a human"))
     assert result.escalation is True
