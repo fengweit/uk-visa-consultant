@@ -36,12 +36,16 @@ attachment (pdf/image/text) ──► extract (text/tables/OCR) ──► type (
 }
 ```
 
-## Extraction layer (per the `pdf` skill)
+## Extraction layer — `pdf-inspector` (Rust, Python bindings)
 
-- **PDF with a text layer:** pypdf/pdfplumber — per-page text, tables, metadata.
-- **Scanned / image-only PDF or image:** route to OCR (pymupdf fast path, marker for quality-sensitive docs); do **not** report empty text as "no content" — check for image-only pages first (`--meta` → `likely_scanned_pages` → rasterize → OCR).
-- **Plain text / email body:** accepted directly.
-- Output of this layer is raw per-page text + tables + a scanned/quality flag; **typing** happens in the next layer.
+`pdf-inspector` (v1.17+, `import pdf_inspector`) is the extraction engine. It classifies and extracts in one fast pass:
+
+- **Classification** — `process_pdf` / `detect_pdf` / `classify_pdf` return `pdf_type` (`text_based` | `scanned` | `image_based` | `mixed`) with a 0–1 confidence, per-page OCR routing (`pages_needing_ocr`), table/column detection, and `has_encoding_issues`.
+- **Extraction** — `extract_text`, `extract_text_with_positions` (X/Y + font info), and `extract_pages_markdown` (per-page Markdown with headings/tables/lists).
+- **Mapping to `Document`** — `pdf_type` ∈ {`scanned`, `image_based`} ⇒ `quality.scanned=True`; `mixed` ⇒ `scanned=True` + `flags+=["mixed_layout"]`; `confidence` ⇒ `quality.extraction_confidence`; `pages_needing_ocr` ⇒ flag; `has_encoding_issues` ⇒ flag (OCR fallback later).
+- **OCR** (`process_pdf_with_ocr`) is out of scope for the intake MVP (requires PDFium/ONNX runtime); we record `pages_needing_ocr` and route later.
+- **Plain text / email body** is accepted directly.
+- Output of this layer is raw text/markdown + a `pdf_type`/quality flag; **typing** happens in the next layer.
 
 ## Document profiles (data-driven)
 

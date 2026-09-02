@@ -70,7 +70,7 @@ Router consumes the `Intent` and dispatches to a specialist: `document_query`, `
 
 ### 3. Document parsing (`docs/specs/document-parsing.md`)
 
-- PDF text/tables/metadata extraction (pypdf/pdfplumber per the `pdf` skill), image fallback via OCR (pymupdf/marker).
+- `pdf-inspector` (Rust) for classification (`text_based`/`scanned`/`image_based`/`mixed` + confidence) and text/markdown extraction; selective OCR is deferred (records `pages_needing_ocr`).
 - Emits a structured `Document` — typed fields keyed by document type (passport → number/name/DOB/expiry; bank statement → balances/dates; employment letter → employer/dates/salary), plus provenance (source file, page, extraction confidence) and flags (scanned, low-quality, tamper suspicion).
 - Middle-layer reuse: a document "profile" declares fields + extraction hints so new doc types are added by data, not code.
 
