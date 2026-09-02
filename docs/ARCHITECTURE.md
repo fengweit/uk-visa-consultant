@@ -53,6 +53,43 @@ flowchart LR
     EH["Eval harness<br/>(checks before humans)"] -.-> HITL
 ```
 
+## Case state machine & agent workflow
+
+The pipeline above is the **data flow**. The **control flow** is a case state
+machine — full design in [`docs/AGENT-WORKFLOW.md`](AGENT-WORKFLOW.md).
+
+```mermaid
+stateDiagram-v2
+    [*] --> intake
+    intake --> gathering: route identified
+    intake --> parked: escalate / refusal risk
+    gathering --> gathering: document parsed (re-run gap)
+    gathering --> review: gap READY
+    gathering --> parked: refusal risk / low confidence / escalate
+    review --> delivered: gates PASS
+    review --> gathering: gate FAIL (revision list)
+    review --> parked: gate HOLD
+    delivered --> gathering: client revision
+    delivered --> closed: client confirms
+    parked --> gathering: human request_more
+    parked --> review: human approve / override
+    closed --> [*]
+```
+
+**Implementation status** (built ✅ / spec-only ⬜):
+
+| Module | Status |
+|---|---|
+| Comms layer (`channels/`) | ✅ |
+| Intent recognition (`intents/`) | ✅ |
+| Document parsing (`parsing/`) | ✅ |
+| IntakeAgent (`agent.py`) | ✅ |
+| Eval harness (`evals/`) | ✅ |
+| Gap analysis | ⬜ spec |
+| Assembly / gates / deliver | ⬜ spec |
+| Reminder / follow-up | ⬜ spec |
+| Human-in-the-loop | ⬜ spec |
+
 ### 1. Comms layer (`docs/specs/comms-layer.md`)
 
 - `ChannelAdapter` interface: `receive() -> Message`, `send(Message)`, `send_media(path)`.

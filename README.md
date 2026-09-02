@@ -57,6 +57,28 @@ flowchart LR
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full data model and module contracts.
 
+## Case state machine
+
+The pipeline above is **data flow**. The system is driven by a **case state machine** where each state is owned by one agent — see [`docs/AGENT-WORKFLOW.md`](docs/AGENT-WORKFLOW.md):
+
+```mermaid
+stateDiagram-v2
+    [*] --> intake
+    intake --> gathering: route identified
+    intake --> parked: escalate / refusal risk
+    gathering --> gathering: document parsed (re-run gap)
+    gathering --> review: gap READY
+    gathering --> parked: refusal risk / low confidence / escalate
+    review --> delivered: gates PASS
+    review --> gathering: gate FAIL (revision list)
+    review --> parked: gate HOLD
+    delivered --> gathering: client revision
+    delivered --> closed: client confirms
+    parked --> gathering: human request_more
+    parked --> review: human approve / override
+    closed --> [*]
+```
+
 ## Repository layout
 
 ```
@@ -65,6 +87,7 @@ uk-visa-consultant/
 ├── docs/
 │   ├── ARCHITECTURE.md        # data model, module contracts, pipeline
 │   ├── STABILITY.md           # the delivery-stability thesis
+│   ├── AGENT-WORKFLOW.md       # case state machine & agent workflow
 │   ├── specs/                 # one detailed spec per core module
 │   │   ├── comms-layer.md
 │   │   ├── intent-recognition.md
@@ -79,12 +102,22 @@ uk-visa-consultant/
 │       ├── student.md
 │       ├── worker.md
 │       └── spouse.md
-└── (code lands here as modules are implemented: channels/, pipeline/, agents/, evals/)
+├── src/uk_visa_consultant/
+│   ├── models.py              # canonical types
+│   ├── llm.py                 # LLM provider abstraction (DeepSeek + stub)
+│   ├── agent.py               # IntakeAgent (intent → intake)
+│   ├── config.py
+│   ├── channels/              # local / email / whatsapp adapters
+│   ├── intents/               # intent recognition
+│   ├── parsing/               # pdf-inspector intake
+│   └── evals/                 # harness (promotion bar)
+├── scripts/                   # generate_corpus, backtest_intake, backtest_agent
+└── tests/
 ```
 
 ## Status
 
-Specification phase. The architecture and per-module specs are written; code implementation follows spec-by-spec. The first runnable loop is intended to be **local-message → intent → parse → gap → assemble → verify**, with the DeepSeek API wired in only after the loop is testable.
+**In implementation.** Built and testable now: comms layer (local/email/WhatsApp), intent recognition, document parsing (pdf-inspector), the `IntakeAgent` loop, and the eval harness — 52 tests plus a 101/101 corpus backtest. Next per [`docs/AGENT-WORKFLOW.md`](docs/AGENT-WORKFLOW.md): gap analysis (`gathering`), then assembly/gates/deliver (`review`/`delivered`), reminder, and human-in-the-loop (`parked`). DeepSeek wiring lands after the local loop runs end-to-end.
 
 ## Compliance note
 
