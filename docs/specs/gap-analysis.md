@@ -79,7 +79,7 @@ in:  Documents[passport(exp 2027-03), bank_statement(closing 18420.55, period en
      × RequirementSet[student]
 out: status INCOMPLETE
      - student.cas            MISSING   → action: "Provide your CAS number."
-     - student.funds.28day    OK        → evidence: "£18,420.55 ≥ £10,230.00, period covers 28 days"
+     - student.funds.28day    OK        → evidence: "£18,420.55 ≥ £10,539.00, period covers 28 days"
      - student.passport       OK
      - student.tb             (applicability: country not listed) → skipped, marked "not applicable"
 ```

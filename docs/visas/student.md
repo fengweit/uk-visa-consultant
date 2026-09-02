@@ -22,7 +22,7 @@ UK **Student Route** visa — study at a licensed student sponsor (HEI or other)
 ## Financial requirements (maintenance)
 
 - Must show **course fees for the first year** (or full fees if course ≤1 year) **plus living costs**.
-- Living-cost allowance (illustrative — verify current): **£1,334/month** in London, **£1,023/month** outside London, for up to **9 months**.
+- Living-cost allowance (from 11 Nov 2025 — re-verify before production): **£1,529/month** in London, **£1,171/month** outside London, for up to **9 months**.
 - **28-day rule:** the full required amount must have been held for **28 consecutive days**, ending no more than **31 days** before the application date.
 - Check in `gap-analysis`: `student.funds.28day` — `min_balance ≥ required` AND `period covers 28 consecutive days` AND `period_end within 31 days of application`.
 

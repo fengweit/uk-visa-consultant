@@ -12,7 +12,7 @@ UK **Skilled Worker** visa — sponsored employment in an eligible skilled role.
 |---|---|---|---|---|
 | `worker.passport` | Passport | yes | valid for stay | — |
 | `worker.cos` | CoS (Certificate of Sponsorship) | yes | reference number, issued by licensed sponsor | number must match; check job/role/salary |
-| `worker.english` | English language evidence | yes | B1 (SELT) or degree taught in English | — |
+| `worker.english` | English language evidence | yes | B2 (SELT) or degree taught in English — B1 only for pre-8 Jan 2026 extensions | — |
 | `worker.funds` | Maintenance funds | conditional | £1,270 held 28 days (illustrative) | waived if sponsor certifies maintenance |
 | `worker.tb` | TB test certificate | conditional | approved clinic, ≤6 months | listed countries only |
 | `worker.criminal` | Criminal record certificate | conditional | — | only for specified occupations (e.g. education, healthcare) |
@@ -35,7 +35,7 @@ UK **Skilled Worker** visa — sponsored employment in an eligible skilled role.
 - CoS reference mismatch, or CoS issued by a non-licensed sponsor
 - CoS salary below general threshold or going rate for the occupation code
 - Maintenance funds not held 28 consecutive days (when not sponsor-certified)
-- English evidence below B1
+- English evidence below B2
 
 ## Cover letter template
 
