@@ -22,20 +22,37 @@ Two intertwined deliverables:
 
 Each visa module is a self-contained `RequirementSet`: required documents, financial rules, refusal-risk factors, a cover-letter template, and the assembled-deliverable checklist. See [`docs/visas/`](docs/visas/).
 
-## Pipeline
+## Architecture diagram
 
-```
-channel (WhatsApp / Email / Local)
-  → comms layer            (normalize to canonical Message)
-  → intent recognition     (rewrite → match → Intent)
-  → router                 (dispatch to specialist)
-  → document parsing       (pdf/image → structured Document)
-  → gap analysis           (Documents × RequirementSet → GapReport)
-  → assembly               (checked Package)
-  → verification gates     (fail-closed, before delivery)
-  → deliver / revision
-  → reminder + follow-up   (deadline scheduler)
-  → human-in-the-loop      (gated by the eval harness)
+```mermaid
+flowchart LR
+    subgraph channels["Channels (thin adapters)"]
+        WA[WhatsApp]
+        EM[Email]
+        LO[Local]
+    end
+
+    subgraph core["Core (no network)"]
+        direction LR
+        CL["Comms layer"] --> IR["Intent<br/>rewrite → match"]
+        IR --> RT["Router"]
+        RT --> DP["Document<br/>parsing"]
+        DP --> GA["Gap<br/>analysis"]
+        GA --> AS["Assembly"]
+        AS --> VG{"Verification<br/>gates<br/>(fail-closed)"}
+        VG -- "PASS" --> DL["Deliver"]
+        VG -- "FAIL / HOLD" --> RV["Revision list"]
+    end
+
+    channels --> CL
+
+    VM["Visa modules<br/>RequirementSet (data)"] --> GA
+    LLM["LLM provider<br/>(DeepSeek)"] -.-> IR
+    LLM -.-> DP
+    LLM -.-> GA
+    RF["Reminder / follow-up"] -.-> CL
+    VG -- "HOLD / low confidence" --> HITL["Human-in-the-loop"]
+    EH["Eval harness<br/>(checks before humans)"] -.-> HITL
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full data model and module contracts.

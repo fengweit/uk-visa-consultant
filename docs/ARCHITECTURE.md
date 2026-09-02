@@ -22,22 +22,35 @@ VerificationResult { check_id, verdict: PASS|FAIL|HOLD, evidence, provenance }
 
 ## Pipeline
 
-```
-                 ┌─────────────────────────────────────────────────────────┐
-                 │                    core (no network)                    │
-  channel ──► comms ──► intent ──► router ──► parse ──► gap ──► assemble   │
-   layer       layer    recognition           (pdf)    analysis      │      │
-  (adapter)                                                                │
-                 └─────────────────────────────────────────────────────────┘
-                                                              ▼
-                                              verification gates (fail-closed)
-                                                              ▼
-                                               deliver ──► revision loop
-                                                              ▼
-                                          reminder / follow-up scheduler
-                                                              ▼
-                                              human-in-the-loop (gated by
-                                              eval harness confidence)
+```mermaid
+flowchart LR
+    subgraph channels["Channels (thin adapters)"]
+        WA[WhatsApp]
+        EM[Email]
+        LO[Local]
+    end
+
+    subgraph core["Core (no network)"]
+        direction LR
+        CL["Comms layer"] --> IR["Intent<br/>rewrite → match"]
+        IR --> RT["Router"]
+        RT --> DP["Document<br/>parsing"]
+        DP --> GA["Gap<br/>analysis"]
+        GA --> AS["Assembly"]
+        AS --> VG{"Verification<br/>gates<br/>(fail-closed)"}
+        VG -- "PASS" --> DL["Deliver"]
+        VG -- "FAIL / HOLD" --> RV["Revision list"]
+    end
+
+    channels --> CL
+
+    VM["Visa modules<br/>RequirementSet (data)"] --> GA
+    LLM["LLM provider<br/>(DeepSeek)"] -.-> IR
+    LLM -.-> DP
+    LLM -.-> GA
+    RF["Reminder / follow-up"] -.-> CL
+    VG -- "HOLD / low confidence" --> HITL["Human-in-the-loop"]
+    EH["Eval harness<br/>(checks before humans)"] -.-> HITL
 ```
 
 ### 1. Comms layer (`docs/specs/comms-layer.md`)
