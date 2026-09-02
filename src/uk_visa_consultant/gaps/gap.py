@@ -73,7 +73,7 @@ def analyze(documents: list[Document], requirement_set: RequirementSet,
                     verdict = "EXPIRING"
                     action = f"Expires {expiry}, before stay end {stay_end}."
             elif check == "scanned":
-                if doc.quality.scanned:
+                if doc.quality.scanned and not doc.quality.ocr_used:
                     verdict = "INVALID"
                     action = "Scanned document needs OCR."
 

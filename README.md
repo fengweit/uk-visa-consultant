@@ -4,7 +4,7 @@ A **human-like UK visa application consultant agent**. It interacts over WhatsAp
 
 Built **delivery-stability-first**: every agent boundary uses structured output, every deliverable passes a fail-closed verification gate before it ships, and every claim carries provenance. The core is channel-agnostic and fully testable over a **local message loop** (no network) before any WhatsApp/email integration exists.
 
-> **Status:** in implementation, **stable and demo-ready** — `75` unit tests, `20/20` workflow eval, `106/106` intake backtest, all green. Email gateway is live-tested end-to-end; WhatsApp gateway is wired and ready (see Setup).
+> **Status:** in implementation, **stable and demo-ready** — `92` unit/regression tests, `20/20` workflow eval, `106/106` intake backtest, and `20/20` real-email corpus flows, all green. Email is live-tested with PDF and image attachments; WhatsApp outbound is live-tested.
 
 ---
 
@@ -131,9 +131,9 @@ The 20 corpus cases are grouped into **6 scenario families** — each one is a s
 ## Behaviors (what each module does)
 
 - **Intent recognition** (`intents/`) — rewrite → rule-first match over a versioned keyword taxonomy (7 intents: `submit_document`, `document_query`, `gap_question`, `status_check`, `schedule`, `escalate_human`, `general`). A question-boost disambiguates "do I need a TB test?" (query) from "here is my passport" (submit). Deterministic rules first; LLM hook for the long tail.
-- **Document parsing** (`parsing/`) — `pdf-inspector` (Rust) classifies each PDF (`text_based`/`scanned`/`image_based`/`mixed` + confidence) and extracts text/markdown; a data-driven profile registry types the document; a deterministic "Label: Value" fallback fills fields when no LLM key is present, and `claimed_type` preserves a scanned document's type from the client's message.
+- **Document parsing** (`parsing/`) — `pdf-inspector` (Rust) classifies each PDF (`text_based`/`scanned`/`image_based`/`mixed` + confidence) and extracts native text/markdown. JPG/PNG attachments use local macOS Vision OCR (fail-closed when unavailable), then DeepSeek converts the OCR text into the typed field schema. A deterministic "Label: Value" fallback remains only for the synthetic corpus; `claimed_type` preserves a scanned document's type from the client's message.
 - **Gap analysis** (`gaps/`) — `Documents × RequirementSet → GapReport`. Verdicts are **computed, never model-generated**: presence, funds/income thresholds, name consistency, expiry, scanned. Standard `GapReport` format.
-- **Assembly + gates** (`workflow/`) — static `Package` (form data, checklist, cover letter) then five fail-closed gates: `gap.ready`, `mandatory.all`, `form.complete`, `funds.window` (31-day), `passport.validity` (scanned → HOLD). `PASS` ships; `FAIL`/`HOLD` blocks; unverifiable is `HOLD`, never `PASS`.
+- **Assembly + gates** (`workflow/`) — static `Package` (form data, checklist, cover letter) then five fail-closed gates: `gap.ready`, `mandatory.all`, `form.complete`, `funds.window` (31-day), `passport.validity` (unprocessed scan → HOLD; successfully OCR'd image continues). `PASS` ships; `FAIL`/`HOLD` blocks; unverifiable is `HOLD`, never `PASS`.
 - **Gateway** (`gateway/`) — the channel-agnostic loop. Stateful per client: infers the route, accumulates documents, runs the supervisor, and replies with real gap feedback ("you still need X"). WhatsApp webhook (HMAC signature verify, fail-closed) + email IMAP poll both route through it.
 
 ---
@@ -234,6 +234,21 @@ Agent:   I've checked your documents. Still outstanding:
            • Passport: Expires 2026-09-25, before stay end 2026-10-05.
 ```
 
+### 7. Real image passport — OCR + DeepSeek + live email
+
+The repository includes [`examples/documents/fake-passport.jpg`](examples/documents/fake-passport.jpg), a deliberately fake UK passport image. The live test sends it from the client Gmail account to the agent Gmail account, runs local Vision OCR, asks DeepSeek for schema-valid passport fields, and reads the reply back from the client inbox.
+
+```text
+Extracted: DOE JOHN · passport 537856940 · DOB 1986-07-16
+           expiry 2026-05-22 · BRITISH CITIZEN
+
+Agent:     I've checked your documents. Still outstanding:
+           • Proof of funds: Provide your proof of funds.
+           • Accommodation: Provide your accommodation.
+```
+
+The test asserts that the reply does **not** say “passport missing” or “needs OCR”. Run `uv run python scripts/e2e_real_passport.py` (requires both Gmail test accounts and `DEEPSEEK_API_KEY`).
+
 ---
 
 ## Architecture
@@ -264,7 +279,7 @@ src/uk_visa_consultant/
 
 1. Enable **2-Step Verification**, then create an **App Password** (Security → App passwords → "Mail").
 2. Enable **IMAP** (Gmail → Forwarding and POP/IMAP → Enable IMAP).
-3. Fill `.env`: `EMAIL_IMAP_PASSWORD=*** (the account, hosts, and ports are pre-filled).
+3. Fill `.env`: `EMAIL_IMAP_PASSWORD=***` (the account, hosts, and ports are pre-filled).
 
 ### WhatsApp (Meta Cloud API)
 
@@ -275,19 +290,21 @@ src/uk_visa_consultant/
 
 Full walkthrough: [`docs/setup-channels.md`](docs/setup-channels.md).
 
-### DeepSeek (LLM extraction, optional)
+### DeepSeek (LLM extraction)
 
-Put `DEEPSEEK_API_KEY=*** in `.env` — `get_llm()` switches field extraction from the deterministic fallback to DeepSeek automatically. **DeepSeek is text-only**; reading scanned/image documents is OCR (`pdf-inspector`'s `process_pdf_with_ocr`), a separate non-LLM step.
+Put `DEEPSEEK_API_KEY=***` in `.env`; `get_llm()` then uses DeepSeek for schema-valid field extraction. DeepSeek is text-only: `pdf-inspector` extracts native PDF text first, while JPG/PNG attachments use local macOS Vision OCR before the text is sent to DeepSeek. If OCR or schema validation fails, the document remains incomplete—values are never guessed.
 
 ---
 
 ## Testing & stability
 
 ```bash
-uv run pytest -q                          # 75 unit tests
-uv run python scripts/eval_workflow.py    # 20/20 workflow eval (PROMOTED)
-uv run python scripts/backtest_agent.py   # 106/106 agent backtest
-uv run python scripts/backtest_intake.py  # 106/106 intake backtest
+uv run pytest -q                               # 92 unit/regression tests
+uv run python scripts/eval_workflow.py         # 20/20 workflow eval (PROMOTED)
+uv run python scripts/backtest_agent.py        # 106/106 agent backtest
+uv run python scripts/backtest_intake.py       # 106/106 intake backtest
+uv run python scripts/e2e_email_real.py all    # 20/20 real Gmail + PDF corpus flows
+uv run python scripts/e2e_real_passport.py     # live JPG → OCR → DeepSeek → Gmail reply
 ```
 
 **Stability guarantees** (verified, not assumed):

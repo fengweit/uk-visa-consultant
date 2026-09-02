@@ -68,7 +68,7 @@ def verify(package: Package, gap: GapReport, documents: list[Document],
         expiry = passport.fields.get("expiry")
         stay_end = client.get("stay_end")
         verdict, evidence = "PASS", "passport valid"
-        if passport.quality.scanned:
+        if passport.quality.scanned and not passport.quality.ocr_used:
             verdict, evidence = "HOLD", "scanned passport — needs OCR/human verification"
         elif expiry and stay_end and str(expiry) < str(stay_end):
             verdict, evidence = "FAIL", f"expiry {expiry} before stay end {stay_end}"

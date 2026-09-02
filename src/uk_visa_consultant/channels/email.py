@@ -277,7 +277,7 @@ class EmailAdapter(ChannelAdapter):
         try:
             orig_subject = self._last_subject.get(message.client_id)
             subject = f"Re: {orig_subject}" if orig_subject else "UK visa update"
-            self._smtp_send(
+            outbound_id = self._smtp_send(
                 to=to,
                 subject=subject,
                 body=message.body,
@@ -287,7 +287,7 @@ class EmailAdapter(ChannelAdapter):
                 thread_id=message.thread_id,
                 references=message.references,
             )
-            return SendReceipt(ok=True, external_id=message.id)
+            return SendReceipt(ok=True, external_id=outbound_id or message.id)
         except Exception as exc:  # noqa: BLE001 — transport boundary, fail closed
             return SendReceipt(ok=False, error=str(exc))
 
@@ -308,7 +308,7 @@ class EmailAdapter(ChannelAdapter):
     def _smtp_send(
         self, to: str, subject: str, body: str, attachments: Iterable[tuple[str, str]],
         thread_id: str | None = None, references: list[str] | None = None,
-    ) -> None:
+    ) -> str | None:
         msg = EmailMessage()
         msg["From"] = self.from_addr
         msg["To"] = to
@@ -339,6 +339,7 @@ class EmailAdapter(ChannelAdapter):
             if self.imap_user:
                 smtp.login(self.imap_user, self.imap_password)
             smtp.send_message(msg)
+        return str(msg.get("Message-ID")) if msg.get("Message-ID") else None
 
 
 def _sanitize_filename(filename: str) -> str:

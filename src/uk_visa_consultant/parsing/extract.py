@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import subprocess
+import sys
 
 import pdf_inspector
 from pydantic import BaseModel, Field
@@ -149,20 +151,60 @@ def extract_text_file(path: str | Path) -> Extraction:
     return ext
 
 
+def _ocr_image_macos(path: Path) -> tuple[str, float | None]:
+    """OCR one image locally with macOS Vision; fail closed on any error."""
+    if sys.platform != "darwin":
+        return "", None
+    script = Path(__file__).with_name("vision_ocr.swift")
+    if not script.exists():
+        return "", None
+    try:
+        proc = subprocess.run(
+            ["swift", str(script), str(path)],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "", None
+    if proc.returncode != 0:
+        return "", None
+    rows: list[str] = []
+    confidences: list[float] = []
+    for line in proc.stdout.splitlines():
+        confidence, sep, text = line.partition("\t")
+        if not sep or not text.strip():
+            continue
+        try:
+            score = float(confidence)
+        except ValueError:
+            continue
+        if not 0.0 <= score <= 1.0:
+            continue
+        rows.append(text.strip())
+        confidences.append(score)
+    return "\n".join(rows), (min(confidences) if confidences else None)
+
+
 def extract_image_file(path: str | Path) -> Extraction:
-    """A bare image attachment: single image-only page (OCR still out of scope)."""
+    """OCR a bare image locally when possible; otherwise flag it for OCR."""
     p = Path(path)
+    text, confidence = _ocr_image_macos(p)
+    ocr_ok = bool(text.strip())
     ext = Extraction(
         source_path=str(p),
         num_pages=1,
         pdf_type="scanned",
-        pages_needing_ocr=[1],
+        classification_confidence=confidence,
+        pages_needing_ocr=[] if ocr_ok else [1],
+        ocr_used=ocr_ok,
     )
-    ext.pages.append(
-        PageContent(page=1, text="", has_text=False, needs_ocr=True)
-    )
-    ext.metadata["title"] = p.name
-    ext.metadata["page_count"] = 1
+    ext.pages.append(PageContent(
+        page=1, text=text, has_text=ocr_ok, needs_ocr=not ocr_ok,
+    ))
+    ext.metadata.update({
+        "title": p.name,
+        "page_count": 1,
+        "ocr_engine": "macos-vision" if ocr_ok else "unavailable",
+    })
     return ext
 
 
