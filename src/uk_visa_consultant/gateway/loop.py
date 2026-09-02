@@ -9,6 +9,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+import re
+
 from uk_visa_consultant.agent import IntakeAgent
 from uk_visa_consultant.evals.output_contract import validate_reply
 from uk_visa_consultant.models import Message
@@ -17,7 +19,7 @@ from uk_visa_consultant.workflow.supervisor import CaseSupervisor
 
 
 def _new_case() -> dict[str, Any]:
-    return {"visa_type": None, "documents": [], "name": None}
+    return {"visa_type": None, "documents": [], "name": None, "stay_end": None}
 
 
 def _infer_route(text: str) -> str | None:
@@ -30,6 +32,20 @@ def _infer_route(text: str) -> str | None:
         return "worker"
     if "visitor" in t or "visit" in t or "tourist" in t or "holiday" in t:
         return "visitor"
+    return None
+
+
+_DATE = re.compile(r"\b(20\d{2})[-/](\d{2})[-/](\d{2})\b")
+
+
+def _extract_stay_end(text: str) -> str | None:
+    """Pull an intended stay-end date from a message ('until 2026-10-05', a range)."""
+    matches = _DATE.findall(text)
+    if not matches:
+        return None
+    if len(matches) >= 2 or any(kw in text.lower() for kw in ("until", "depart", "leave", "return")):
+        y, m, d = matches[-1]
+        return f"{y}-{m}-{d}"
     return None
 
 
@@ -50,6 +66,9 @@ class Gateway:
 
         if not case["visa_type"]:
             case["visa_type"] = _infer_route(message.body)
+        stay = _extract_stay_end(message.body)
+        if stay:
+            case["stay_end"] = stay
 
         if result.escalation:
             reply = result.reply
@@ -59,7 +78,8 @@ class Gateway:
             reply = self._requirements_intro(case["visa_type"])
         else:
             client = {"id": message.client_id, "name": case["name"],
-                      "application_date": datetime.now(timezone.utc).date().isoformat()}
+                      "application_date": datetime.now(timezone.utc).date().isoformat(),
+                      "stay_end": case.get("stay_end")}
             wr = self.supervisor.run(case["documents"], get_requirement_set(case["visa_type"]), client)
             reply = self._compose_status(wr)
 

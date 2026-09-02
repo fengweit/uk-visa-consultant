@@ -59,3 +59,21 @@ def test_agent_does_not_crash_on_bad_attachment():
     assert result.action == "parse_failed"
     assert result.documents == []
     assert "couldn't read" in result.reply
+
+
+def test_scanned_pdf_typed_via_intent_slot(tmp_path):
+    from PIL import Image
+    img = Image.new("RGB", (400, 600), "white")
+    png = tmp_path / "scan.png"
+    img.save(str(png))
+    p = tmp_path / "scanned.pdf"
+    c = canvas.Canvas(str(p))
+    c.drawImage(str(png), 100, 100, width=400, height=600)
+    c.save()
+
+    msg = _msg("here is my passport", [
+        Attachment(kind="pdf", local_path=str(p), mime="application/pdf"),
+    ])
+    result = IntakeAgent().handle(msg)
+    assert result.documents[0].type == "passport"  # from the intent slot, not "general"
+    assert result.documents[0].quality.scanned is True

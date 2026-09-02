@@ -45,8 +45,10 @@ class IntakeAgent:
                     reply="Got it — please attach the document so I can check it.",
                     needs_clarification=intent.needs_clarification,
                 )
+            claimed = intent.slots.get("document_type")
             try:
-                docs = [intake(a.local_path, a.mime, llm=self.llm) for a in message.attachments]
+                docs = [intake(a.local_path, a.mime, llm=self.llm, claimed_type=claimed)
+                        for a in message.attachments]
             except Exception:  # noqa: BLE001 — a bad attachment must not crash the loop
                 return AgentResult(
                     intent=intent.intent, action="parse_failed",
