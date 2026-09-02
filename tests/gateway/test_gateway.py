@@ -2,7 +2,9 @@
 import hashlib
 import hmac
 import json
+from datetime import datetime, timezone
 
+import httpx
 from fastapi.testclient import TestClient
 from reportlab.pdfgen import canvas
 
@@ -93,3 +95,27 @@ def test_gateway_asks_route_when_unknown():
     gw = Gateway()
     r = gw.handle(Message(id="m1", client_id="c1", channel=Channel.LOCAL, body="here is my passport"))
     assert "visa route" in r.body.lower()
+
+
+def test_whatsapp_send_posts_to_cloud_api():
+    captured = {}
+
+    def handler(request):
+        captured["url"] = str(request.url)
+        captured["json"] = json.loads(request.content)
+        captured["auth"] = request.headers.get("Authorization")
+        return httpx.Response(200, json={"messages": [{"id": "wamid.test"}]})
+
+    wa = WhatsAppAdapter(app_secret="s", access_token="tok", phone_number_id="123",
+                         http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+    cid = wa.identity.resolve_phone("15551234567")
+    wa._last_inbound[cid] = datetime.now(timezone.utc)  # open the 24h window
+    receipt = wa.send(Message(id="m1", client_id=cid, channel=Channel.WHATSAPP, body="hello"))
+
+    assert receipt.ok is True
+    assert receipt.external_id == "wamid.test"
+    assert captured["json"]["type"] == "text"
+    assert captured["json"]["text"]["body"] == "hello"
+    assert captured["json"]["to"] == "15551234567"
+    assert captured["auth"] == "Bearer tok"
+    assert "/123/messages" in captured["url"]

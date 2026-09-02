@@ -24,6 +24,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+import httpx
+
 from uk_visa_consultant.channels.base import ChannelAdapter, ChannelError
 from uk_visa_consultant.channels.identity import IdentityResolver
 from uk_visa_consultant.models import Attachment, Channel, Message, SendReceipt
@@ -89,10 +91,20 @@ class WhatsAppAdapter(ChannelAdapter):
         *,
         upload_dir: str | Path = "data/uploads",
         http_client: Any | None = None,
+        access_token: str | None = None,
+        phone_number_id: str | None = None,
+        api_version: str | None = None,
     ) -> None:
         self.app_secret = app_secret if app_secret is not None else os.environ.get(
             "WHATSAPP_APP_SECRET", ""
         )
+        self.access_token = access_token if access_token is not None else os.environ.get(
+            "WHATSAPP_ACCESS_TOKEN", ""
+        )
+        self.phone_number_id = phone_number_id if phone_number_id is not None else os.environ.get(
+            "WHATSAPP_PHONE_NUMBER_ID", ""
+        )
+        self.api_version = api_version or os.environ.get("WHATSAPP_API_VERSION", "v21.0")
         self.identity = identity or IdentityResolver()
         self.upload_dir = Path(upload_dir)
         self._http = http_client  # httpx.Client, injectable for tests
@@ -203,19 +215,46 @@ class WhatsAppAdapter(ChannelAdapter):
         return ((now or datetime.now(timezone.utc)) - last) < _CUSTOMER_SERVICE_WINDOW
 
     def send(self, message: Message, *, template: str | None = None) -> SendReceipt:
-        """Enforce the template-vs-freeform rule, then record the outbound send.
+        """Enforce the template-vs-freeform rule, then send via the Cloud API.
 
-        ``template`` is an approved template name (e.g. ``"appointment_reminder"``).
-        When omitted, the message is free-form and is only allowed inside an
-        active customer-service window; otherwise ``TemplateWindowError``.
+        With credentials configured this POSTs to the Meta Cloud API; without
+        credentials it records into the outbox (deterministic test mode).
         """
         if template is None and not self.in_customer_service_window(message.client_id):
             raise TemplateWindowError(
                 f"no active 24h customer-service window for {message.client_id}; "
                 "the first outbound message must use an approved template"
             )
-        self._outbox.append((message, template))
-        return SendReceipt(ok=True, external_id=message.id)
+        to = self.identity.phone_for_client(message.client_id)
+        if not (self.access_token and self.phone_number_id):
+            self._outbox.append((message, template))
+            return SendReceipt(ok=True, external_id=message.id)
+        if not to:
+            return SendReceipt(ok=False, error=f"no phone number for client {message.client_id}")
+
+        if template:
+            payload = {
+                "messaging_product": "whatsapp", "recipient_type": "individual", "to": to,
+                "type": "template",
+                "template": {"name": template, "language": {"code": "en_US"}},
+            }
+        else:
+            payload = {
+                "messaging_product": "whatsapp", "recipient_type": "individual", "to": to,
+                "type": "text", "text": {"body": message.body},
+            }
+        client = self._http or httpx.Client()
+        try:
+            resp = client.post(
+                f"https://graph.facebook.com/{self.api_version}/{self.phone_number_id}/messages",
+                headers={"Authorization": f"Bearer {self.access_token}"},
+                json=payload, timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return SendReceipt(ok=True, external_id=data.get("messages", [{}])[0].get("id"))
+        except Exception as exc:  # noqa: BLE001 — transport boundary, fail closed
+            return SendReceipt(ok=False, error=str(exc))
 
     def send_media(self, local_path: str, mime: str, recipient: str | None = None) -> SendReceipt:
         # Media outbound is recorded; real integration uploads + sends via the
