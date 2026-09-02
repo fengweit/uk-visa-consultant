@@ -49,3 +49,13 @@ def test_document_query_answers():
     result = IntakeAgent().handle(_msg("what documents do I need?"))
     assert result.action == "answer_query"
     assert "passport" in result.reply
+
+
+def test_agent_does_not_crash_on_bad_attachment():
+    msg = _msg("here is my passport", [
+        Attachment(kind="pdf", local_path="/nonexistent/x.pdf", mime="application/pdf"),
+    ])
+    result = IntakeAgent().handle(msg)
+    assert result.action == "parse_failed"
+    assert result.documents == []
+    assert "couldn't read" in result.reply
