@@ -65,8 +65,10 @@ class Gateway:
                 case["name"] = doc.fields["full_name"]
             case["documents"].append(doc)
 
-        if not case["visa_type"]:
-            case["visa_type"] = _infer_route(message.body)
+        inferred_route = _infer_route(message.body)
+        if inferred_route and (not case["visa_type"] or not case["documents"]):
+            # Before intake begins, the applicant may correct/clarify the route.
+            case["visa_type"] = inferred_route
         stay = _extract_stay_end(message.body)
         if stay:
             case["stay_end"] = stay

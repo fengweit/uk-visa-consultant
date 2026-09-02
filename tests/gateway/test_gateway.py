@@ -33,6 +33,17 @@ def test_gateway_escalation_reply():
     assert "specialist" in reply.body
 
 
+def test_explicit_route_correction_before_documents_replaces_old_route():
+    gw = Gateway()
+    root = "<thread@x>"
+    gw.handle(Message(id="m1", client_id="c1", channel=Channel.EMAIL,
+                      body="student visa", thread_root=root))
+    reply = gw.handle(Message(id="m2", client_id="c1", channel=Channel.EMAIL,
+                              body="worker visa", thread_root=root))
+    assert "Skilled Worker" in reply.body
+    assert "Student Route" not in reply.body
+
+
 def test_whatsapp_webhook_valid_signature_replies():
     wa = WhatsAppAdapter(app_secret="secret")
     client = TestClient(create_app(wa=wa))

@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import smtplib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -133,7 +134,25 @@ def _extract_body(msg: EmailMessage) -> str:
             text = _decode_part(msg)
         elif msg.get_content_type() == "text/html":
             html = _decode_part(msg)
-    return (text or html or "").strip()
+    return _strip_quoted_history((text or html or "").strip())
+
+
+_QUOTED_REPLY_MARKERS = (
+    re.compile(r"^On .+ wrote:\s*$", re.IGNORECASE),
+    re.compile(r"^-+\s*Original Message\s*-+$", re.IGNORECASE),
+    re.compile(r"^From:\s+.+$", re.IGNORECASE),
+)
+
+
+def _strip_quoted_history(body: str) -> str:
+    """Keep only the newly authored part of a standard email reply."""
+    kept: list[str] = []
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(">") or any(p.match(stripped) for p in _QUOTED_REPLY_MARKERS):
+            break
+        kept.append(line)
+    return "\n".join(kept).strip()
 
 
 def _decode_part(part: EmailMessage) -> str:

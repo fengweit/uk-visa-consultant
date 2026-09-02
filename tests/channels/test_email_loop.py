@@ -169,3 +169,21 @@ def test_blank_subject_reply_stays_with_blank_subject_thread(monkeypatch, tmp_pa
     adapter.send(Message(id="r", client_id=inbound.client_id, channel=Channel.EMAIL,
                          body="hello", thread_id=inbound.thread_id, thread_root=inbound.thread_root))
     assert captured == {"subject": "Re:", "thread_id": "<blank@x>"}
+
+
+def test_gmail_quoted_history_is_not_part_of_new_user_message(tmp_path):
+    adapter = EmailAdapter(imap_host="x", imap_user="u", imap_password="p",
+                           seen_path=tmp_path / "seen.json")
+    parsed = EmailMessage()
+    parsed["From"] = "same@example.com"
+    parsed["To"] = "visa@example.com"
+    parsed["Subject"] = "Re: UK visa update"
+    parsed["Message-ID"] = "<worker2@x>"
+    parsed.set_content(
+        "worker visa!\n\n"
+        "On Wed, Sep 2, 2026 at 2:32 AM <visa@example.com> wrote:\n"
+        "> Which visa route are you applying for — visitor, student, worker, or spouse?\n"
+    )
+    inbound = adapter.receive_email(parsed.as_bytes())
+    assert inbound is not None
+    assert inbound.body == "worker visa!"
