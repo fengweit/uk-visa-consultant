@@ -13,7 +13,7 @@ from .extract import Extraction, extract
 from .fields import extract_fields
 from .profiles import get_profile
 from .type import match_type
-from uk_visa_consultant.llm import StubLLMClient
+from uk_visa_consultant.llm import get_llm
 from uk_visa_consultant.models import Document, DocumentQuality
 
 if TYPE_CHECKING:
@@ -56,7 +56,7 @@ def intake(attachment_path: str | Path, mime: str | None = None, llm: "LLMClient
     ``claimed_type`` is the client's stated document type (from the intent slot);
     it is used only when the PDF is image-only/scanned and has no text to match.
     """
-    client: LLMClient = llm or StubLLMClient()
+    client: LLMClient = llm or get_llm()
     path = Path(attachment_path)
 
     extraction = extract(path, mime)

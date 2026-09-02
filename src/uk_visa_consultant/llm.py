@@ -96,3 +96,21 @@ def _validate(raw: str, schema: type[BaseModel] | None, model: str | None) -> LL
         return LLMResult(raw=raw, parsed=schema.model_validate(data), model=model)
     except ValidationError as e:
         return LLMResult(raw=raw, schema_errors=[str(e)], model=model)
+
+
+def get_llm() -> LLMClient:
+    """Return a DeepSeek client when DEEPSEEK_API_KEY is set, else the stub.
+
+    The single factory the rest of the system uses: a real key switches field
+    extraction (and long-tail intent) from the deterministic fallback to DeepSeek
+    with no code changes.
+    """
+    import os
+    key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if key:
+        return DeepSeekLLMClient(
+            api_key=key,
+            base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+            model=os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
+        )
+    return StubLLMClient()

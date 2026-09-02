@@ -13,6 +13,7 @@ import json
 import time
 from pathlib import Path
 
+from uk_visa_consultant.config import load_env
 from uk_visa_consultant.gateway.loop import Gateway
 from uk_visa_consultant.models import Attachment, Channel, Message
 
@@ -39,6 +40,7 @@ def _run_case(gateway: Gateway, corpus: Path, case_id: str) -> None:
 
 
 def main() -> None:
+    load_env()
     gateway = Gateway()
     corpus = Path("data/corpus")
     print("=== uk-visa-consultant demo ===")
