@@ -24,14 +24,72 @@ def _new_case() -> dict[str, Any]:
 
 def _infer_route(text: str) -> str | None:
     t = text.lower()
-    if "student" in t or "study" in t or "studying" in t or "cas" in t:
-        return "student"
-    if "spouse" in t or "partner" in t or "family" in t or "married" in t or "marriage" in t:
-        return "spouse"
-    if "worker" in t or "skilled" in t or "work visa" in t or "cos" in t or "sponsorship" in t:
-        return "worker"
-    if "visitor" in t or "visit" in t or "tourist" in t or "holiday" in t:
+    # "visit family" describes visitor intent; "family/spouse visa" describes a partner route.
+    if re.search(r"\bvisit(?:ing)?\s+(?:my\s+)?family\b", t):
         return "visitor"
+    aliases = {
+        "visitor": ("visitor", "visit", "tourist", "holiday", "访问", "旅游"),
+        "student": ("student", "study", "studying", "cas", "学生签证", "留学"),
+        "worker": ("worker", "skilled", "work visa", "cos", "sponsorship", "工作签证", "工签"),
+        "spouse": ("spouse", "partner", "family visa", "married", "marriage", "配偶签证", "家庭签证"),
+    }
+    mentions: list[tuple[int, str]] = []
+    for route, terms in aliases.items():
+        for term in terms:
+            pos = t.rfind(term)
+            if pos >= 0:
+                mentions.append((pos, route))
+    return max(mentions)[1] if mentions else None
+
+
+_CAPABILITIES = (
+    "what can you help", "what do you do", "how can you help", "your services",
+    "do not know where to start", "don't know where to start", "new to this",
+)
+_UNSUPPORTED_ROUTES = (
+    "global talent", "innovator founder", "ancestry visa", "transit visa",
+    "graduate visa", "high potential individual", "youth mobility",
+)
+_FOREIGN_VISA = re.compile(r"\b(us|usa|american|canada|canadian|australia|australian|schengen)\b.*\bvisa\b", re.I)
+_OUT_OF_SCOPE = (
+    "weather", "calculate", "taxes", "tax return", "stock trading", "trading bot",
+    "python malware", "write malware", "ignore your job", "write code",
+)
+
+
+def _special_reply(text: str) -> str | None:
+    """Return bounded guidance for clear capability/scope cases; otherwise continue normally."""
+    t = text.lower().strip()
+    if any(term in t for term in _CAPABILITIES):
+        return (
+            "Hi — I can guide you through preparing a UK Visitor, Student, Skilled Worker, "
+            "or Spouse/Partner visa application. I can explain the route checklist, receive one "
+            "or several documents, read PDFs and images, check for missing or inconsistent details, "
+            "track progress in this thread, and assemble the package after all checks pass. "
+            "To start, tell me why you plan to come to the UK."
+        )
+    if any(term in t for term in _UNSUPPORTED_ROUTES):
+        return (
+            "Thanks for asking. I can't run that route end to end yet. I currently support UK "
+            "Visitor, Student, Skilled Worker, and Spouse/Partner applications. I can still help "
+            "you organize documents, but use a regulated adviser for route-specific advice."
+        )
+    if _FOREIGN_VISA.search(t):
+        return (
+            "Thanks for asking. I can't help with non-UK visa applications. I focus on UK visa "
+            "document preparation for Visitor, Student, Skilled Worker, and Spouse/Partner routes."
+        )
+    if "guarantee" in t and any(term in t for term in ("visa", "approved", "approval")):
+        return (
+            "I can help prepare and check your documents, but I can't guarantee visa approval or "
+            "provide legal advice. I can show you every missing or inconsistent item; a regulated "
+            "immigration adviser should handle legal strategy or an appeal."
+        )
+    if any(term in t for term in _OUT_OF_SCOPE) or re.search(r"\d+\s*[+*/]\s*\d+", t):
+        return (
+            "Thanks for asking. I can't help with that request. My job is UK visa document "
+            "preparation for Visitor, Student, Skilled Worker, and Spouse/Partner applications."
+        )
     return None
 
 
@@ -56,6 +114,15 @@ class Gateway:
         self.cases: dict[str, dict[str, Any]] = {}
 
     def handle(self, message: Message) -> Message:
+        special = None if message.attachments else _special_reply(message.body)
+        if special is not None:
+            reply = special if not validate_reply(special) else (
+                "I'm sorry, I ran into a problem — a specialist will follow up shortly."
+            )
+            return Message(id=f"{message.id}_reply", client_id=message.client_id,
+                           channel=message.channel, body=reply, thread_id=message.thread_id,
+                           thread_root=message.thread_root, references=message.references)
+
         result = self.agent.handle(message)
         key = message.thread_root or message.client_id
         case = self.cases.setdefault(key, _new_case())
