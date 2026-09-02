@@ -4,7 +4,7 @@ A **human-like UK visa application consultant agent**. It interacts over WhatsAp
 
 Built **delivery-stability-first**: every agent boundary uses structured output, every deliverable passes a fail-closed verification gate before it ships, and every claim carries provenance. The core is channel-agnostic and fully testable over a **local message loop** (no network) before any WhatsApp/email integration exists.
 
-> **Status:** in implementation, **stable and demo-ready** — `110` unit/regression tests, `20/20` workflow eval, `106/106` intake backtest, `20/20` real-email corpus flows, and `27/27` live-email question/edge flows, all green. Email is live-tested with PDF and image attachments; WhatsApp outbound is live-tested.
+> **Status:** in implementation, **stable and demo-ready** — `112` unit/regression tests, `20/20` workflow eval, `106/106` intake backtest, `20/20` real-email corpus flows, and `27/27` live-email question/edge flows, all green. Email is live-tested with PDF and image attachments; WhatsApp outbound is live-tested.
 
 ---
 
@@ -324,7 +324,7 @@ Put `DEEPSEEK_API_KEY=***` in `.env`; `get_llm()` then uses DeepSeek for schema-
 ## Testing & stability
 
 ```bash
-uv run pytest -q                               # 110 unit/regression tests
+uv run pytest -q                               # 112 unit/regression tests
 uv run python scripts/eval_workflow.py         # 20/20 workflow eval (PROMOTED)
 uv run python scripts/backtest_agent.py        # 106/106 agent backtest
 uv run python scripts/backtest_intake.py       # 106/106 intake backtest
@@ -336,7 +336,7 @@ uv run python scripts/e2e_real_passport.py     # live JPG → OCR → DeepSeek �
 **Stability guarantees** (verified, not assumed):
 - **Deterministic** — identical inputs → byte-identical outputs (no model nondeterminism in the spine).
 - **Fail-closed** — tampered WhatsApp webhooks are dropped; any gate `FAIL`/`HOLD` blocks delivery; SMTP transport errors return `ok=False`, never silently lost.
-- **Idempotent** — email polling marks seen + persists a seen-set, so re-polling never re-processes a message.
+- **Idempotent** — email polling marks seen + persists a seen-set, so re-polling never re-processes a message. Messages marked as automated (`Auto-Submitted`, `X-Auto-Response-Suppress`, bulk/list precedence, or no-reply senders) are consumed without sending a reply.
 - **No partial shipping** — a package passes all gates or is not delivered.
 
 ---

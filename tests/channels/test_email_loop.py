@@ -124,6 +124,25 @@ def test_skips_own_outbound_mail(tmp_path):
     assert adapter.receive_email(raw) is None
 
 
+def test_skips_automated_notification_mail(tmp_path):
+    adapter = EmailAdapter(imap_host="x", imap_user="u", imap_password="p",
+                           seen_path=tmp_path / "seen.json")
+    m = EmailMessage()
+    m["From"] = "WhatsApp Business Team <notification@facebookmail.com>"
+    m["To"] = "visa@example.com"
+    m["Subject"] = "Your template state changed"
+    m["Message-ID"] = "<bot@meta>"
+    m["X-Auto-Response-Suppress"] = "All"
+    m.set_content("Automated notification")
+    assert adapter.receive_email(m.as_bytes()) is None
+
+
+def test_skips_no_reply_sender(tmp_path):
+    adapter = EmailAdapter(imap_host="x", imap_user="u", imap_password="p",
+                           seen_path=tmp_path / "seen.json")
+    assert adapter.receive_email(_raw_email(from_addr="no-reply@example.com")) is None
+
+
 def _thread_email(subject, msg_id):
     m = EmailMessage()
     m["From"] = "same@example.com"

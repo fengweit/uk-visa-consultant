@@ -63,6 +63,21 @@ class ParsedEmail:
     subject: str = ""
     in_reply_to: str = ""
     references: list[str] = field(default_factory=list)
+    automated: bool = False
+
+
+def _is_automated_message(msg: EmailMessage, from_addr: str) -> bool:
+    local_part = from_addr.partition("@")[0].lower()
+    if local_part.startswith(("no-reply", "noreply", "do-not-reply", "donotreply")):
+        return True
+    auto_submitted = str(msg.get("Auto-Submitted") or "").strip().lower()
+    if auto_submitted and auto_submitted != "no":
+        return True
+    suppress = str(msg.get("X-Auto-Response-Suppress") or "").strip().lower()
+    if suppress and suppress != "none":
+        return True
+    precedence = str(msg.get("Precedence") or "").strip().lower()
+    return precedence in {"bulk", "list", "junk"}
 
 
 def parse_email(raw: bytes) -> ParsedEmail:
@@ -80,6 +95,7 @@ def parse_email(raw: bytes) -> ParsedEmail:
     subject = str(msg.get("Subject") or "")
     in_reply_to = str(msg.get("In-Reply-To") or "").strip()
     references = [r.strip() for r in str(msg.get("References") or "").split() if r.strip()]
+    automated = _is_automated_message(msg, from_addr)
 
     ts = datetime.now(timezone.utc)
     date_hdr = msg.get("Date")
@@ -113,6 +129,7 @@ def parse_email(raw: bytes) -> ParsedEmail:
         subject=subject,
         in_reply_to=in_reply_to,
         references=references,
+        automated=automated,
     )
 
 
@@ -220,6 +237,8 @@ class EmailAdapter(ChannelAdapter):
         if parsed.message_id in self._seen:
             return None
         self._seen.add(parsed.message_id)
+        if parsed.automated:
+            return None  # never converse with notification bots/autoresponders
         if parsed.from_addr and self.from_addr and parsed.from_addr.lower() == self.from_addr.lower():
             return None  # skip our own outbound mail (avoids self-reply loops)
 
