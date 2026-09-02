@@ -275,7 +275,16 @@ class EmailAdapter(ChannelAdapter):
                 data, maintype=maintype, subtype=subtype, filename=Path(path).name
             )
 
-        with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=10) as smtp:
+        smtp = (
+            smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=10)
+            if self.smtp_port == 465
+            else smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=10)
+        )
+        with smtp:
+            if self.smtp_port != 465 and self.imap_user:
+                smtp.starttls()
+            if self.imap_user:
+                smtp.login(self.imap_user, self.imap_password)
             smtp.send_message(msg)
 
 
