@@ -59,6 +59,7 @@ class ParsedEmail:
     ts: datetime
     body: str = ""
     attachments: list[tuple[str, str, bytes]] = field(default_factory=list)  # (name, mime, payload)
+    subject: str = ""
 
 
 def parse_email(raw: bytes) -> ParsedEmail:
@@ -72,6 +73,8 @@ def parse_email(raw: bytes) -> ParsedEmail:
     from_hdr = msg.get("From")
     if from_hdr:
         from_addr = parseaddr(str(from_hdr))[1]
+
+    subject = str(msg.get("Subject") or "")
 
     ts = datetime.now(timezone.utc)
     date_hdr = msg.get("Date")
@@ -102,6 +105,7 @@ def parse_email(raw: bytes) -> ParsedEmail:
         ts=ts,
         body=body,
         attachments=attachments,
+        subject=subject,
     )
 
 
@@ -166,6 +170,7 @@ class EmailAdapter(ChannelAdapter):
         self.upload_dir = Path(upload_dir)
         self.seen_path = Path(seen_path)
         self._seen: set[str] = set(self._load_seen())
+        self._last_subject: dict[str, str] = {}  # client_id -> inbound subject (for Re:)
 
     def _load_seen(self) -> set[str]:
         """Persisted set of already-processed message ids (survives restarts)."""
@@ -190,8 +195,11 @@ class EmailAdapter(ChannelAdapter):
         if parsed.message_id in self._seen:
             return None
         self._seen.add(parsed.message_id)
+        if parsed.from_addr and self.from_addr and parsed.from_addr.lower() == self.from_addr.lower():
+            return None  # skip our own outbound mail (avoids self-reply loops)
 
         client_id = self.identity.resolve_email(parsed.from_addr)
+        self._last_subject[client_id] = parsed.subject
         msg_id = _derive_message_id(parsed.message_id)
 
         attachments: list[Attachment] = []
@@ -207,6 +215,7 @@ class EmailAdapter(ChannelAdapter):
             ts=parsed.ts,
             body=parsed.body,
             attachments=attachments,
+            thread_id=parsed.message_id,
         )
 
     def _store_attachment(
@@ -257,13 +266,16 @@ class EmailAdapter(ChannelAdapter):
         if not to:
             return SendReceipt(ok=False, error=f"no recipient email for client {message.client_id}")
         try:
+            orig_subject = self._last_subject.get(message.client_id)
+            subject = f"Re: {orig_subject}" if orig_subject else "UK visa update"
             self._smtp_send(
                 to=to,
-                subject=f"UK visa update ({message.client_id})",
+                subject=subject,
                 body=message.body,
                 attachments=[
                     (a.local_path, a.mime) for a in message.attachments
                 ],
+                thread_id=message.thread_id,
             )
             return SendReceipt(ok=True, external_id=message.id)
         except Exception as exc:  # noqa: BLE001 — transport boundary, fail closed
@@ -284,12 +296,16 @@ class EmailAdapter(ChannelAdapter):
             return SendReceipt(ok=False, error=str(exc))
 
     def _smtp_send(
-        self, to: str, subject: str, body: str, attachments: Iterable[tuple[str, str]]
+        self, to: str, subject: str, body: str, attachments: Iterable[tuple[str, str]],
+        thread_id: str | None = None,
     ) -> None:
         msg = EmailMessage()
         msg["From"] = self.from_addr
         msg["To"] = to
         msg["Subject"] = subject
+        if thread_id:
+            msg["In-Reply-To"] = thread_id
+            msg["References"] = thread_id
         msg.set_content(body or "(no message body)")
         for path, mime in attachments:
             data = Path(path).read_bytes()

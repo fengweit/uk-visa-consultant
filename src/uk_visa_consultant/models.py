@@ -37,6 +37,7 @@ class Message(BaseModel):
     ts: datetime = Field(default_factory=_utcnow)
     body: str = ""
     attachments: list[Attachment] = Field(default_factory=list)
+    thread_id: str | None = None  # original email Message-ID, for reply threading
 
 
 class SendReceipt(BaseModel):

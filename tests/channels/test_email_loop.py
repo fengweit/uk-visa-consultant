@@ -6,6 +6,7 @@ import json
 from email.message import EmailMessage
 
 from uk_visa_consultant.channels.email import EmailAdapter
+from uk_visa_consultant.models import Channel, Message
 
 
 def _raw_email(from_addr="alice@example.com", body="hello there", msg_id="<m1@example>"):
@@ -93,3 +94,31 @@ def test_seen_persists_across_instances(monkeypatch, tmp_path):
     monkeypatch.setattr(imaplib, "IMAP4_SSL", lambda host, port: fake2)
     second = EmailAdapter(imap_host="x", imap_user="u", imap_password="p", seen_path=seen_path)
     assert second.receive() == []
+
+
+def test_reply_threads_under_original_email(monkeypatch, tmp_path):
+    adapter = EmailAdapter(imap_host="x", imap_user="u", imap_password="p",
+                           seen_path=tmp_path / "seen.json")
+    inbound = adapter.receive_email(_raw_email())
+    assert inbound.thread_id == "<m1@example>"
+
+    captured = {}
+
+    def fake_smtp_send(self, to, subject, body, attachments, thread_id=None):
+        captured["thread_id"] = thread_id
+        captured["subject"] = subject
+
+    monkeypatch.setattr(EmailAdapter, "_smtp_send", fake_smtp_send)
+    reply = Message(id="r1", client_id=inbound.client_id, channel=Channel.EMAIL,
+                    body="got it", thread_id=inbound.thread_id)
+    adapter.send(reply)
+    assert captured["thread_id"] == "<m1@example>"
+    assert captured["subject"] == "Re: test"
+
+
+def test_skips_own_outbound_mail(tmp_path):
+    adapter = EmailAdapter(imap_host="x", imap_user="u", imap_password="p",
+                           from_addr="fengwei.demo.uk.visa@gmail.com",
+                           seen_path=tmp_path / "seen.json")
+    raw = _raw_email(from_addr="fengwei.demo.uk.visa@gmail.com")
+    assert adapter.receive_email(raw) is None

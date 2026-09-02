@@ -66,7 +66,7 @@ class Gateway:
         if validate_reply(reply):
             reply = "I'm sorry, I ran into a problem — a specialist will follow up shortly."
         return Message(id=f"{message.id}_reply", client_id=message.client_id,
-                       channel=message.channel, body=reply)
+                       channel=message.channel, body=reply, thread_id=message.thread_id)
 
     @staticmethod
     def _ask_route(result) -> str:

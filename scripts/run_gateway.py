@@ -26,7 +26,7 @@ def _email_loop():
                 adapter.send(reply, to_addr=adapter.identity.email_for_client(message.client_id))
         except Exception as exc:  # transport boundary — log and keep polling
             print(f"[email-loop] {exc}")
-        time.sleep(30)
+        time.sleep(int(os.environ.get("EMAIL_POLL_INTERVAL", "5")))
 
 
 def main() -> None:
