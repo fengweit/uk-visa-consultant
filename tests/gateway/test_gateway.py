@@ -4,11 +4,12 @@ import hmac
 import json
 
 from fastapi.testclient import TestClient
+from reportlab.pdfgen import canvas
 
 from uk_visa_consultant.channels.whatsapp import WhatsAppAdapter
 from uk_visa_consultant.gateway.loop import Gateway
 from uk_visa_consultant.gateway.server import create_app
-from uk_visa_consultant.models import Channel, Message
+from uk_visa_consultant.models import Attachment, Channel, Message
 
 
 def _signed(body: bytes, secret: str) -> dict:
@@ -60,3 +61,35 @@ def test_whatsapp_webhook_verify_handshake():
 
 def test_healthz():
     assert TestClient(create_app(wa=WhatsAppAdapter(app_secret="s"))).get("/healthz").json() == {"status": "ok"}
+
+
+# --- supervisor integration (stateful gateway) ------------------------------
+
+def _passport_pdf(path):
+    c = canvas.Canvas(str(path))
+    c.drawString(72, 720, "PASSPORT")
+    c.drawString(72, 700, "Full Name: Jane Doe")
+    c.drawString(72, 680, "Passport Number: E12345678")
+    c.drawString(72, 660, "Date of Birth: 1998-04-02")
+    c.drawString(72, 640, "Nationality: Chinese")
+    c.drawString(72, 620, "Date of Expiry: 2027-03-03")
+    c.save()
+
+
+def test_gateway_infers_route_and_reports_gaps(tmp_path):
+    gw = Gateway()
+    r1 = gw.handle(Message(id="m1", client_id="c1", channel=Channel.LOCAL, body="I want a student visa"))
+    assert "Student Route" in r1.body
+
+    p = tmp_path / "passport.pdf"
+    _passport_pdf(p)
+    r2 = gw.handle(Message(id="m2", client_id="c1", channel=Channel.LOCAL, body="here is my passport",
+                           attachments=[Attachment(kind="pdf", local_path=str(p), mime="application/pdf")]))
+    assert "CAS" in r2.body        # gap feedback, not just "received"
+    assert "funds" in r2.body.lower()
+
+
+def test_gateway_asks_route_when_unknown():
+    gw = Gateway()
+    r = gw.handle(Message(id="m1", client_id="c1", channel=Channel.LOCAL, body="here is my passport"))
+    assert "visa route" in r.body.lower()
