@@ -18,7 +18,9 @@ from uk_visa_consultant.models import Intent
 # ties on equal hit counts.
 _RULES: list[tuple[str, str, tuple[str, ...]]] = [
     ("submit_document.v1", "submit_document", (
-        "here is my", "here's my", "here is the", "here's the",
+        "here is my", "here's my", "here are my", "here're my",
+        "here is the", "here's the", "here are the", "here're the",
+        "my documents", "my files", "my docs",
         "sending you", "send you", "sending my", "send my",
         "attached", "attach", "upload",
         "my passport", "my bank", "bank statement", "payslip",

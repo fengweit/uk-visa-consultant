@@ -116,3 +116,33 @@ def test_same_email_two_threads_are_isolated(tmp_path):
     rB2 = gw.handle(adapter.receive_email(
         _email("client@example.com", "s", "here is my passport", p, "<B2@x>", references="<B1@x>")))
     assert "CAS" not in rB2.body
+
+
+def test_multiple_attachments_in_one_email(tmp_path):
+    adapter = _adapter(tmp_path)
+    gw = Gateway()
+    gw.handle(adapter.receive_email(_email("client@example.com", "s", "I want a student visa", mid="<a@x>")))
+
+    p = tmp_path / "passport.pdf"
+    _passport(p)
+    b = tmp_path / "bank.pdf"
+    _bank(b)
+
+    # one email with TWO PDFs attached (plural phrasing)
+    from email.message import EmailMessage
+    m = EmailMessage()
+    m["From"] = "client@example.com"
+    m["To"] = "visa@example.com"
+    m["Subject"] = "s"
+    m["Message-ID"] = "<b@x>"
+    m["References"] = "<a@x>"
+    m.set_content("here are my documents")
+    for path in (p, b):
+        m.add_attachment(path.read_bytes(), maintype="application", subtype="pdf", filename=path.name)
+
+    msg = adapter.receive_email(m.as_bytes())
+    assert len(msg.attachments) == 2  # both files parsed
+    reply = gw.handle(msg)
+    # both parsed -> funds resolved, only CAS still missing (and it lists all missing)
+    assert "CAS" in reply.body
+    assert "funds" not in reply.body.lower()
