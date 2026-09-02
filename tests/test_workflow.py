@@ -93,10 +93,27 @@ def test_visitor_scanned_passport():
     assert _verdicts(gap)["visitor.passport"] == "INVALID"
 
 
-def test_supervisor_ready_to_review():
-    docs = [_doc("passport", {"full_name": "Jane Doe"}), _doc("cas", {"name": "Jane Doe"}),
-            _doc("bank_statement", {"closing_balance": 18420.0, "min_balance": 15200.0})]
-    assert CaseSupervisor().run(docs, STUDENT, {"name": "Jane Doe"}).final_state == "review"
+def test_supervisor_delivers_ready_case():
+    docs = [_doc("passport", {"full_name": "Jane Doe", "expiry": "2027-03-03"}),
+            _doc("cas", {"name": "Jane Doe"}),
+            _doc("bank_statement", {"closing_balance": 18420.0, "min_balance": 15200.0,
+                                    "period_end": "2026-08-31"})]
+    client = {"name": "Jane Doe", "application_date": "2026-09-01"}
+    result = CaseSupervisor().run(docs, STUDENT, client)
+    assert result.final_state == "delivered"
+    assert result.package is not None
+    assert all(c.verdict == "PASS" for c in result.checks)
+    assert result.package.checklist
+
+
+def test_supervisor_gate_fail_stale_funds_sends_back_to_gathering():
+    docs = [_doc("passport", {"full_name": "Jane Doe", "expiry": "2027-03-03"}),
+            _doc("cas", {"name": "Jane Doe"}),
+            _doc("bank_statement", {"closing_balance": 18420.0, "min_balance": 15200.0,
+                                    "period_end": "2026-05-01"})]  # > 31 days before app
+    result = CaseSupervisor().run(docs, STUDENT, {"name": "Jane Doe", "application_date": "2026-09-01"})
+    assert result.final_state == "gathering"
+    assert any(c.check_id == "gate.funds.window" and c.verdict == "FAIL" for c in result.checks)
 
 
 def test_supervisor_incomplete_stays_gathering():

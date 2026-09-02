@@ -87,7 +87,7 @@ stateDiagram-v2
 | Eval harness (`evals/`) | ✅ |
 | Gap analysis (`gaps/`) | ✅ |
 | CaseSupervisor (`workflow/`) | ✅ |
-| Assembly / gates / deliver | ⬜ spec |
+| Assembly + gates (`workflow/`) | ✅ |
 | Reminder / follow-up | ⬜ spec |
 | Human-in-the-loop | ⬜ spec |
 
