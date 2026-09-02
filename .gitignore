@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Secrets / env — deny by default (privacy firewall)
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+credentials*.json
+
+# Client data — never commit real applicant materials
+data/clients/
+data/uploads/
+*.local.json
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
