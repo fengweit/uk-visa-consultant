@@ -82,7 +82,7 @@ class Gateway:
                       "application_date": datetime.now(timezone.utc).date().isoformat(),
                       "stay_end": case.get("stay_end")}
             wr = self.supervisor.run(case["documents"], get_requirement_set(case["visa_type"]), client)
-            reply = self._compose_status(wr)
+            reply = self._compose_status(wr, result.documents)
 
         if validate_reply(reply):
             reply = "I'm sorry, I ran into a problem — a specialist will follow up shortly."
@@ -100,18 +100,37 @@ class Gateway:
     def _requirements_intro(visa_type: str) -> str:
         req = get_requirement_set(visa_type)
         docs = ", ".join(r.name.lower() for r in req.requirements)
-        return (f"I can help with your {req.route} application. "
-                f"You'll need: {docs}. Attach them here and I'll check each one.")
+        return (f"Thanks for getting started. I can help you prepare your {req.route} application. "
+                f"We'll work through it together. You'll need: {docs}. "
+                "Send one or several files in this thread, and I'll check each one and keep you updated.")
 
     @staticmethod
-    def _compose_status(wr) -> str:
+    def _compose_status(wr, received_documents=None) -> str:
         gap = wr.gap_report
+        received = list(received_documents or [])
+        if received:
+            labels = sorted({d.type.replace("_", " ") for d in received})
+            received_line = "Thanks for sending your " + ", ".join(labels) + ". I've checked " + (
+                "it." if len(received) == 1 else "them."
+            )
+        else:
+            received_line = "Thanks for checking in. I've reviewed your application so far."
+
         if wr.final_state == "delivered":
-            return "All your documents are verified — your application package is ready to submit."
+            return (received_line + " Good news: all required documents are verified, "
+                    "and your application package is ready to submit.")
         if wr.final_state == "parked":
-            return "I've flagged your case for a specialist review — I'll be in touch shortly."
+            return (received_line + " One item needs a specialist review before we continue. "
+                    "I've flagged it, and we'll follow up with you shortly.")
+
         failing = [i for i in gap.items if i.verdict != "OK"]
-        lines = ["I've checked your documents. Still outstanding:"]
+        passing = [i for i in gap.items if i.verdict == "OK"]
+        lines = [received_line]
+        if passing:
+            lines.append("You're making good progress. Here's what we still need:")
+        else:
+            lines.append("I found a few things we need to work through:")
         for i in failing:
             lines.append(f"  • {i.req_name}: {i.action or i.verdict.lower()}")
+        lines.append("Send these when you're ready, and I'll check them in this same thread.")
         return "\n".join(lines)

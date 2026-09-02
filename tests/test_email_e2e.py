@@ -72,6 +72,9 @@ def test_email_pdf_conversation_progresses_to_ready(tmp_path):
     _passport(p)
     r1 = gw.handle(adapter.receive_email(_email("client@example.com", "s", "here is my passport", p, "<b@x>", references="<a@x>")))
     assert "CAS" in r1.body and "funds" in r1.body.lower()  # both still missing
+    assert r1.body.startswith("Thanks for sending your passport. I've checked it.")
+    assert "making good progress" in r1.body.lower()
+    assert "same thread" in r1.body.lower()
 
     b = tmp_path / "bank.pdf"
     _bank(b)
@@ -82,6 +85,8 @@ def test_email_pdf_conversation_progresses_to_ready(tmp_path):
     _cas(c)
     r3 = gw.handle(adapter.receive_email(_email("client@example.com", "s", "here is my cas", c, "<d@x>", references="<a@x>")))
     assert "ready to submit" in r3.body.lower()
+    assert "good news" in r3.body.lower()
+    assert r3.body.startswith("Thanks for sending your cas. I've checked it.")
 
 
 def test_email_pdf_insufficient_funds_reports_invalid(tmp_path):
@@ -146,3 +151,5 @@ def test_multiple_attachments_in_one_email(tmp_path):
     # both parsed -> funds resolved, only CAS still missing (and it lists all missing)
     assert "CAS" in reply.body
     assert "funds" not in reply.body.lower()
+    assert reply.body.startswith("Thanks for sending your bank statement, passport. I've checked them.")
+    assert "making good progress" in reply.body.lower()

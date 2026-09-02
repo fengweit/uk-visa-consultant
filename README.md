@@ -132,6 +132,7 @@ The 20 corpus cases are grouped into **6 scenario families** — each one is a s
 
 - **Intent recognition** (`intents/`) — rewrite → rule-first match over a versioned keyword taxonomy (7 intents: `submit_document`, `document_query`, `gap_question`, `status_check`, `schedule`, `escalate_human`, `general`). A question-boost disambiguates "do I need a TB test?" (query) from "here is my passport" (submit). Deterministic rules first; LLM hook for the long tail.
 - **Document parsing** (`parsing/`) — `pdf-inspector` (Rust) classifies each PDF (`text_based`/`scanned`/`image_based`/`mixed` + confidence) and extracts native text/markdown. JPG/PNG attachments use local macOS Vision OCR (fail-closed when unavailable), then DeepSeek converts the OCR text into the typed field schema. A deterministic "Label: Value" fallback remains only for the synthetic corpus; `claimed_type` preserves a scanned document's type from the client's message.
+- **Consultant voice** ([`docs/AGENT-VOICE.md`](docs/AGENT-VOICE.md)) — deterministic warmth contract: acknowledge the received files, recognize actual progress, list every remaining action, and invite the applicant to continue in the same thread. Encouragement cannot change a verdict or imply visa approval.
 - **Gap analysis** (`gaps/`) — `Documents × RequirementSet → GapReport`. Verdicts are **computed, never model-generated**: presence, funds/income thresholds, name consistency, expiry, scanned. Standard `GapReport` format.
 - **Assembly + gates** (`workflow/`) — static `Package` (form data, checklist, cover letter) then five fail-closed gates: `gap.ready`, `mandatory.all`, `form.complete`, `funds.window` (31-day), `passport.validity` (unprocessed scan → HOLD; successfully OCR'd image continues). `PASS` ships; `FAIL`/`HOLD` blocks; unverifiable is `HOLD`, never `PASS`.
 - **Gateway** (`gateway/`) — the channel-agnostic loop. Stateful per client: infers the route, accumulates documents, runs the supervisor, and replies with real gap feedback ("you still need X"). WhatsApp webhook (HMAC signature verify, fail-closed) + email IMAP poll both route through it.
@@ -158,80 +159,86 @@ All your documents are verified — your application package is ready to submit.
 
 ### 1. Complete application — Student Route → ready
 
-```
-You:     I want a student visa
-Agent:   I can help with your Student Route application. You'll need: passport, cas,
-         maintenance funds (28-day). Attach them here and I'll check each one.
+```text
+You:   I want a student visa
+Agent: Thanks for getting started. I can help you prepare your Student Route application.
+       We'll work through it together. You'll need: passport, cas, maintenance funds
+       (28-day). Send one or several files in this thread, and I'll check each one.
 
-You:     here is my passport            [attached: passport.pdf]
-Agent:   I've checked your documents. Still outstanding:
-           • CAS: Provide your cas.
-           • Maintenance funds (28-day): Provide your maintenance funds (28-day).
+You:   here is my passport            [attached: passport.pdf]
+Agent: Thanks for sending your passport. I've checked it.
+       You're making good progress. Here's what we still need:
+       • CAS: Provide your cas.
+       • Maintenance funds (28-day): Provide your maintenance funds (28-day).
+       Send these when you're ready, and I'll check them in this same thread.
 
-You:     here is my bank statement      [attached: bank_statement.pdf]
-Agent:   I've checked your documents. Still outstanding:
-           • CAS: Provide your cas.
+You:   here is my bank statement      [attached: bank_statement.pdf]
+Agent: Thanks for sending your bank statement. I've checked it.
+       You're making good progress. Here's what we still need:
+       • CAS: Provide your cas.
+       Send these when you're ready, and I'll check them in this same thread.
 
-You:     here is my cas                 [attached: cas.pdf]
-Agent:   All your documents are verified — your application package is ready to submit.
+You:   here is my cas                 [attached: cas.pdf]
+Agent: Thanks for sending your cas. I've checked it. Good news: all required documents
+       are verified, and your application package is ready to submit.
 ```
 
 ### 2. Missing a mandatory document — Student → MISSING
 
-```
-You:     I want a student visa
-Agent:   I can help with your Student Route application. You'll need: passport, cas,
-         maintenance funds (28-day)…
-
-You:     here is my passport            [attached: passport.pdf]
-Agent:   I've checked your documents. Still outstanding:
-           • CAS: Provide your cas.
-           • Maintenance funds (28-day): Provide your maintenance funds (28-day).
+```text
+You:   here is my passport            [attached: passport.pdf]
+Agent: Thanks for sending your passport. I've checked it.
+       You're making good progress. Here's what we still need:
+       • CAS: Provide your cas.
+       • Maintenance funds (28-day): Provide your maintenance funds (28-day).
+       Send these when you're ready, and I'll check them in this same thread.
 ```
 
 ### 3. Insufficient funds — Student → INVALID
 
-```
-You:     here is my bank statement      [attached: bank_statement.pdf, balance £8,000]
-Agent:   I've checked your documents. Still outstanding:
-           • Passport: Provide your passport.
-           • CAS: Provide your cas.
-           • Maintenance funds (28-day): Funds below required £10,539.
+```text
+You:   here is my bank statement      [attached: bank_statement.pdf, balance £8,000]
+Agent: Thanks for sending your bank statement. I've checked it.
+       I found a few things we need to work through:
+       • Passport: Provide your passport.
+       • CAS: Provide your cas.
+       • Maintenance funds (28-day): Funds below required £10,539.
+       Send these when you're ready, and I'll check them in this same thread.
 ```
 
 ### 4. Name mismatch — Worker → INCONSISTENT
 
-```
-You:     I want a worker visa
-Agent:   I can help with your Skilled Worker application. You'll need: passport, cos,
-         english language, maintenance funds…
-
-You:     here is my cos                [attached: cos.pdf, worker "Janet Doe"]
-Agent:   I've checked your documents. Still outstanding:
-           • CoS: Name mismatch: 'Janet Doe' vs passport 'Jane Doe'.
+```text
+You:   here is my cos                 [attached: cos.pdf, worker "Janet Doe"]
+Agent: Thanks for sending your cos. I've checked it.
+       You're making good progress. Here's what we still need:
+       • CoS: Name mismatch: 'Janet Doe' vs passport 'Jane Doe'.
+       Send these when you're ready, and I'll check them in this same thread.
 ```
 
-### 5. Scanned (image-only) passport — Visitor → needs OCR
+### 5. Scanned PDF without available OCR — Visitor → INVALID
 
-```
-You:     I want a visitor visa, staying until 2026-10-05
-Agent:   I can help with your Standard Visitor application. You'll need: passport,
-         proof of funds, accommodation…
-
-You:     here is my passport           [attached: scanned/image-only passport.pdf]
-Agent:   I've checked your documents. Still outstanding:
-           • Passport: Scanned document needs OCR.
+```text
+You:   here is my passport            [attached: scanned/image-only passport.pdf]
+Agent: Thanks for sending your passport. I've checked it.
+       I found a few things we need to work through:
+       • Passport: Scanned document needs OCR.
+       • Proof of funds: Provide your proof of funds.
+       • Accommodation: Provide your accommodation.
+       Send these when you're ready, and I'll check them in this same thread.
 ```
 
 ### 6. Passport expiring mid-stay — Visitor → EXPIRING
 
-```
-You:     I want a visitor visa, staying until 2026-10-05
-Agent:   I can help with your Standard Visitor application…
-
-You:     here is my passport           [attached: passport.pdf, expires 2026-09-25]
-Agent:   I've checked your documents. Still outstanding:
-           • Passport: Expires 2026-09-25, before stay end 2026-10-05.
+```text
+You:   I want a visitor visa, staying until 2026-10-05
+You:   here is my passport            [attached: passport.pdf, expires 2026-09-25]
+Agent: Thanks for sending your passport. I've checked it.
+       I found a few things we need to work through:
+       • Passport: Expires 2026-09-25, before stay end 2026-10-05.
+       • Proof of funds: Provide your proof of funds.
+       • Accommodation: Provide your accommodation.
+       Send these when you're ready, and I'll check them in this same thread.
 ```
 
 ### 7. Real documents — OCR + DeepSeek + one live email thread
@@ -248,16 +255,20 @@ Passport extracted: DOE JOHN · passport 537856940 · DOB 1986-07-16
                     expiry 2026-05-22 · BRITISH CITIZEN
 
 After passport:
-Agent: I've checked your documents. Still outstanding:
+Agent: Thanks for sending your passport. I've checked it.
+       You're making good progress. Here's what we still need:
        • CAS: Provide your cas.
        • Maintenance funds (28-day): Provide your maintenance funds (28-day).
+       Send these when you're ready, and I'll check them in this same thread.
 
 Bank statement extracted: Anne Example · closing £9,260 · minimum £9,060
 
 After bank statement (same thread):
-Agent: I've checked your documents. Still outstanding:
+Agent: Thanks for sending your bank statement. I've checked it.
+       You're making good progress. Here's what we still need:
        • CAS: Provide your cas.
        • Maintenance funds (28-day): Funds below required £10,539.
+       Send these when you're ready, and I'll check them in this same thread.
 ```
 
 The test asserts that the agent never asks for the passport again, preserves the thread's accumulated documents, and applies the real funds threshold. Run `uv run python scripts/e2e_real_passport.py` (requires both Gmail test accounts and `DEEPSEEK_API_KEY`).

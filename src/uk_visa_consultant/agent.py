@@ -35,7 +35,7 @@ class IntakeAgent:
         if intent.intent == "escalate_human":
             return AgentResult(
                 intent=intent.intent, action="escalate", escalation=True,
-                reply="I've flagged this for a specialist — we'll be in touch shortly.",
+                reply="Thanks for telling me. I've flagged this for a specialist, and we'll follow up with you shortly.",
             )
 
         if intent.intent == "submit_document":
@@ -52,12 +52,12 @@ class IntakeAgent:
             except Exception:  # noqa: BLE001 — a bad attachment must not crash the loop
                 return AgentResult(
                     intent=intent.intent, action="parse_failed",
-                    reply="I couldn't read that file — please send a valid PDF or image.",
+                    reply="Thanks for sending this. I couldn't read the file safely, so please send it again as a valid PDF, JPG, or PNG. We'll continue from the same thread.",
                 )
             types = ", ".join(sorted({d.type for d in docs}))
             return AgentResult(
                 intent=intent.intent, action="parse_document", documents=docs,
-                reply=f"Received and checked your document(s): {types}.",
+                reply=f"Thanks for sending your document(s). I've received and checked: {types}.",
             )
 
         if intent.intent == "document_query":
