@@ -117,7 +117,7 @@ uk-visa-consultant/
 
 ## Status
 
-**In implementation.** Built and testable now: comms layer (local/email/WhatsApp), intent recognition, document parsing (pdf-inspector), the `IntakeAgent` loop, and the eval harness — 52 tests plus a 101/101 corpus backtest. Next per [`docs/AGENT-WORKFLOW.md`](docs/AGENT-WORKFLOW.md): gap analysis (`gathering`), then assembly/gates/deliver (`review`/`delivered`), reminder, and human-in-the-loop (`parked`). DeepSeek wiring lands after the local loop runs end-to-end.
+**In implementation.** Built and testable now: comms layer (local/email/WhatsApp), intent recognition, document parsing (pdf-inspector), the `IntakeAgent` loop, the `CaseSupervisor` state machine + gap analysis (`gathering`), and the eval harness — 65 tests plus a 20/20 workflow eval over the corpus. Next: assembly/gates/deliver (`review`/`delivered`), reminder, and human-in-the-loop (`parked`). DeepSeek wiring lands after the local loop runs end-to-end.
 
 ## Compliance note
 

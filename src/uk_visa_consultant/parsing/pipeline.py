@@ -47,11 +47,14 @@ def _build_flags(extraction: Extraction, provenance: dict, notes: list[str]) -> 
     return flags
 
 
-def intake(attachment_path: str | Path, mime: str | None = None, llm: "LLMClient | None" = None) -> Document:
+def intake(attachment_path: str | Path, mime: str | None = None, llm: "LLMClient | None" = None,
+           claimed_type: str | None = None) -> Document:
     """Convert an uploaded attachment into a structured, typed ``Document``.
 
     ``llm`` defaults to ``StubLLMClient`` (deterministic, pre-API-key); pass a
     real client once a provider is configured. OCR is out of scope for now.
+    ``claimed_type`` is the client's stated document type (from the intent slot);
+    it is used only when the PDF is image-only/scanned and has no text to match.
     """
     client: LLMClient = llm or StubLLMClient()
     path = Path(attachment_path)
@@ -59,7 +62,10 @@ def intake(attachment_path: str | Path, mime: str | None = None, llm: "LLMClient
     extraction = extract(path, mime)
 
     type_match = match_type(extraction, client)
-    profile = get_profile(type_match.type)
+    doc_type = type_match.type
+    if doc_type == "general" and claimed_type and get_profile(claimed_type).type != "general":
+        doc_type = claimed_type  # scanned doc: type from the client's claim, not text
+    profile = get_profile(doc_type)
 
     if profile.fields:
         fields, provenance, notes = extract_fields(profile, extraction, client)
@@ -75,7 +81,7 @@ def intake(attachment_path: str | Path, mime: str | None = None, llm: "LLMClient
 
     return Document(
         id=_doc_id(str(path)),
-        type=type_match.type,
+        type=doc_type,
         source_path=str(path),
         source_pages=list(range(1, extraction.num_pages + 1)),
         fields=fields,

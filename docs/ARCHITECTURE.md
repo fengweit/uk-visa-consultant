@@ -85,7 +85,8 @@ stateDiagram-v2
 | Document parsing (`parsing/`) | ✅ |
 | IntakeAgent (`agent.py`) | ✅ |
 | Eval harness (`evals/`) | ✅ |
-| Gap analysis | ⬜ spec |
+| Gap analysis (`gaps/`) | ✅ |
+| CaseSupervisor (`workflow/`) | ✅ |
 | Assembly / gates / deliver | ⬜ spec |
 | Reminder / follow-up | ⬜ spec |
 | Human-in-the-loop | ⬜ spec |

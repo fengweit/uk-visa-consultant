@@ -201,6 +201,7 @@ CAS = DocumentProfile(
         "course": _f(KIND_TEXT, "course title"),
         "start_date": _f(KIND_DATE, "course start date"),
         "end_date": _f(KIND_DATE, "course end date"),
+        "name": _f(KIND_TEXT, "student / applicant name"),
     },
 )
 
@@ -215,6 +216,20 @@ COS = DocumentProfile(
         "role": _f(KIND_TEXT, "job role / SOC code"),
         "start_date": _f(KIND_DATE, "employment start date"),
         "end_date": _f(KIND_DATE, "employment end date"),
+        "name": _f(KIND_TEXT, "worker / applicant name"),
+    },
+)
+
+RELATIONSHIP_EVIDENCE = DocumentProfile(
+    type="relationship_evidence",
+    match=MatchSpec(
+        keywords=["relationship evidence", "photos", "correspondence",
+                  "cohabitation", "communication log", "shared bills",
+                  "genuine relationship"],
+    ),
+    fields={
+        "parties": _f(KIND_TEXT, "the two people named"),
+        "evidence_type": _f(KIND_TEXT, "type of evidence (photos, correspondence, …)"),
     },
 )
 
@@ -241,6 +256,7 @@ PROFILES: dict[str, DocumentProfile] = {
         ACCOMMODATION,
         CAS,
         COS,
+        RELATIONSHIP_EVIDENCE,
         GENERAL,
     )
 }

@@ -192,6 +192,13 @@ def build_itinerary(out_dir, filename, scanned, **d):
     ], scanned)
 
 
+def build_relationship_evidence(out_dir, filename, scanned, **d):
+    _render(out_dir, filename, "RELATIONSHIP EVIDENCE", [
+        ("Parties", d["parties"]),
+        ("Evidence Type", d["evidence_type"]),
+    ], scanned)
+
+
 DOC_TYPES = {
     "passport": "passport",
     "bank_statement": "bank_statement",
@@ -204,6 +211,7 @@ DOC_TYPES = {
     "accommodation": "accommodation",
     "invitation_letter": "invitation_letter",
     "itinerary": "general",
+    "relationship_evidence": "relationship_evidence",
 }
 
 BUILDERS = {
@@ -218,6 +226,7 @@ BUILDERS = {
     "accommodation": build_accommodation,
     "invitation_letter": build_invitation_letter,
     "itinerary": build_itinerary,
+    "relationship_evidence": build_relationship_evidence,
 }
 
 
@@ -227,6 +236,8 @@ BUILDERS = {
 
 _JANE = {"name": "Jane Doe", "dob": "1998-04-02", "nationality": "CN",
          "passport_no": "E12345678", "expiry": "2027-03-03"}
+
+_VISITOR_CLIENT = dict(_JANE, country_of_residence="CN", stay_end="2026-10-05")
 
 
 def _passport(client, scanned=False):
@@ -279,6 +290,11 @@ def _marriage(a, b, date="2024-05-18", place="Shenzhen, China", reg="M-2024-0771
             "registration_no": reg}
 
 
+def _relationship_evidence(a, b, etype="Photos and correspondence"):
+    return {"builder": "relationship_evidence", "file": "relationship_evidence.pdf",
+            "parties": f"{a} & {b}", "evidence_type": etype}
+
+
 def _itinerary(name, arrival, departure):
     return {"builder": "itinerary", "file": "itinerary.pdf", "name": name,
             "arrival": arrival, "departure": departure}
@@ -292,7 +308,7 @@ CASES += [
         "case_id": "visitor_001_complete", "visa_type": "visitor", "route": "Standard Visitor",
         "scenario": "complete",
         "description": "All required documents present and valid -> READY.",
-        "client": dict(_JANE, country_of_residence="CN"),
+        "client": _VISITOR_CLIENT,
         "documents": [
             _passport(_JANE),
             _bank("Jane Doe", 8500.00, 3200.00),
@@ -307,7 +323,7 @@ CASES += [
         "case_id": "visitor_002_missing_funds", "visa_type": "visitor", "route": "Standard Visitor",
         "scenario": "missing_funds",
         "description": "No bank statement supplied -> funds requirement MISSING.",
-        "client": dict(_JANE, country_of_residence="CN"),
+        "client": _VISITOR_CLIENT,
         "documents": [
             _passport(_JANE),
             _employment("Acme Ltd", "Jane Doe", "Software Engineer", 62000.00),
@@ -320,7 +336,7 @@ CASES += [
         "case_id": "visitor_003_name_mismatch", "visa_type": "visitor", "route": "Standard Visitor",
         "scenario": "name_mismatch",
         "description": "Bank account holder name differs from passport -> INCONSISTENT.",
-        "client": dict(_JANE, country_of_residence="CN"),
+        "client": _VISITOR_CLIENT,
         "documents": [
             _passport(_JANE),
             _bank("Jane A. Doe", 8500.00, 3200.00),   # mismatch vs passport "Jane Doe"
@@ -335,7 +351,7 @@ CASES += [
         "case_id": "visitor_004_passport_expiring", "visa_type": "visitor", "route": "Standard Visitor",
         "scenario": "passport_expiring",
         "description": "Passport expires during the intended stay -> EXPIRING.",
-        "client": dict(_JANE, country_of_residence="CN"),
+        "client": _VISITOR_CLIENT,
         "documents": [
             _passport({**_JANE, "expiry": "2026-09-25"}),  # expires mid-stay (20 Sep - 5 Oct)
             _bank("Jane Doe", 8500.00, 3200.00),
@@ -350,11 +366,12 @@ CASES += [
         "case_id": "visitor_005_scanned_passport", "visa_type": "visitor", "route": "Standard Visitor",
         "scenario": "scanned_document",
         "description": "Passport supplied as an image-only (scanned) PDF -> needs OCR routing.",
-        "client": dict(_JANE, country_of_residence="CN"),
+        "client": _VISITOR_CLIENT,
         "documents": [
             _passport(_JANE, scanned=True),
             _bank("Jane Doe", 8500.00, 3200.00),
             _employment("Acme Ltd", "Jane Doe", "Software Engineer", 62000.00),
+            _accommodation("Premier Inn, London", "Premier Inn (booking)", 1, 1),
         ],
         "expected": {"status": "INCOMPLETE", "gap_items": [
             {"req_id": "visitor.passport", "verdict": "INVALID",
@@ -563,6 +580,7 @@ CASES += [
         "documents": [
             _passport(_SPOUSE_APPLICANT),
             _marriage("Jane Doe", _SPONSOR),
+            _relationship_evidence("Jane Doe", _SPONSOR),
             _employment("Roe Consulting Ltd", _SPONSOR, "Consultant", 35000.00),
             _bank(_SPONSOR, 12000.00, 9000.00),
             _english("Jane Doe", "IELTS", "A1", "2026-04-10"),
@@ -579,6 +597,7 @@ CASES += [
         "documents": [
             _passport(_SPOUSE_APPLICANT),
             _marriage("Jane Doe", _SPONSOR),
+            _relationship_evidence("Jane Doe", _SPONSOR),
             _employment("Roe Consulting Ltd", _SPONSOR, "Consultant", 20000.00),  # < £29,000
             _bank(_SPONSOR, 6000.00, 4500.00),
             _english("Jane Doe", "IELTS", "A1", "2026-04-10"),
@@ -597,6 +616,7 @@ CASES += [
         "documents": [
             _passport(_SPOUSE_APPLICANT),
             _marriage("Jane Doe", _SPONSOR),
+            _relationship_evidence("Jane Doe", _SPONSOR),
             _employment("Roe Consulting Ltd", _SPONSOR, "Consultant", 35000.00),
             _bank(_SPONSOR, 12000.00, 9000.00),
             _accommodation("22 Cedar Lane, Leeds", _SPONSOR, 2, 2),
@@ -630,7 +650,8 @@ CASES += [
         "client": _SPOUSE_APPLICANT,
         "documents": [
             _passport(_SPOUSE_APPLICANT),
-            _marriage("Janet Doe", _SPONSOR),  # mismatch vs passport "Jane Doe"
+            _marriage("Janet Doe", _SPONSOR),
+            _relationship_evidence("Jane Doe", _SPONSOR),  # mismatch vs passport "Jane Doe"
             _employment("Roe Consulting Ltd", _SPONSOR, "Consultant", 35000.00),
             _bank(_SPONSOR, 12000.00, 9000.00),
             _english("Jane Doe", "IELTS", "A1", "2026-04-10"),

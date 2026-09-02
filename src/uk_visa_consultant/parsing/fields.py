@@ -103,6 +103,81 @@ def _locate(value: Any, extraction: Extraction) -> FieldProvenance:
     return FieldProvenance(region="llm", confidence=_CONF_LLM)
 
 
+# Deterministic fallback for the synthetic corpus "Label: Value" format.
+# Real-world PDFs won't match these labels; this is a corpus-format middle layer,
+# clearly separate from the LLM extractor above.
+_LABEL_TO_FIELD: dict[str, dict[str, str]] = {
+    "passport": {"full name": "full_name", "date of birth": "dob",
+                 "passport number": "passport_no", "nationality": "nationality",
+                 "date of expiry": "expiry"},
+    "bank_statement": {"account holder": "account_holder", "statement period": "__period__",
+                       "closing balance": "closing_balance", "minimum balance": "min_balance"},
+    "employment_letter": {"employer": "employer", "employee": "employee", "job title": "role",
+                          "annual salary": "salary", "start date": "start_date", "signed": "signed"},
+    "cas": {"cas number": "reference_no", "sponsor institution": "sponsor",
+            "course title": "course", "course start date": "start_date",
+            "course end date": "end_date", "student name": "name"},
+    "cos": {"cos number": "reference_no", "sponsoring organisation": "sponsor",
+            "occupation code": "role", "commencement date": "start_date",
+            "conclusion date": "end_date", "sponsored worker": "name"},
+    "english_test": {"candidate name": "name", "test": "test", "cefr level / band": "level",
+                     "test date": "date", "reference number": "reference_no"},
+    "tb_certificate": {"applicant name": "name", "certificate number": "certificate_no",
+                       "clinic / test centre": "clinic", "test date": "date", "result": "result"},
+    "marriage_certificate": {"first spouse": "spouse_a", "second spouse": "spouse_b",
+                             "date of marriage": "date", "place of marriage": "place",
+                             "registration number": "registration_no"},
+    "accommodation": {"property address": "address", "landlord / tenant": "owner",
+                      "occupants": "occupants", "rooms / bedrooms": "size_rooms"},
+    "invitation_letter": {"inviter / host": "inviter", "invitee": "invitee",
+                          "relationship": "relationship", "address of stay": "address",
+                          "letter date": "date"},
+    "relationship_evidence": {"parties": "parties", "evidence type": "evidence_type"},
+}
+
+
+def _coerce_field(value: str | None, kind: str) -> Any:
+    if value is None or value == "":
+        return None
+    if kind == "money":
+        try:
+            return float(value.replace(",", "").replace("£", "").strip())
+        except ValueError:
+            return None
+    if kind == "int":
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    if kind == "bool":
+        return value.strip().lower() in ("yes", "true", "1")
+    return value.strip()
+
+
+def extract_fields_deterministic(profile: DocumentProfile, extraction: Extraction) -> dict[str, Any]:
+    """Parse the synthetic corpus's 'Label: Value' lines into profile fields."""
+    label_map = _LABEL_TO_FIELD.get(profile.type, {})
+    raw: dict[str, str] = {}
+    for line in (extraction.full_text or "").splitlines():
+        if ":" not in line:
+            continue
+        label, _, value = line.partition(":")
+        label = label.strip().lower()
+        if label in label_map:
+            raw[label_map[label]] = value.strip()
+
+    fields: dict[str, Any] = {}
+    if "__period__" in raw:  # "YYYY-MM-DD to YYYY-MM-DD"
+        parts = [p.strip() for p in raw["__period__"].split(" to ")]
+        fields["period_start"] = parts[0] if parts else None
+        fields["period_end"] = parts[1] if len(parts) > 1 else None
+    for name, spec in profile.fields.items():
+        if name in ("period_start", "period_end"):
+            continue
+        fields[name] = _coerce_field(raw.get(name), spec.kind)
+    return fields
+
+
 def extract_fields(
     profile: DocumentProfile,
     extraction: Extraction,
@@ -122,6 +197,12 @@ def extract_fields(
     else:
         values = {name: None for name in profile.fields}
         notes.append("schema_validation_failed")
+
+    if all(v is None for v in values.values()):
+        det = extract_fields_deterministic(profile, extraction)
+        if any(v is not None for v in det.values()):
+            values.update(det)
+            notes.append("deterministic_fallback")
 
     provenance: dict[str, FieldProvenance] = {}
     for name in profile.fields:

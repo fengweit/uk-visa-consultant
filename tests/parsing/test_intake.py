@@ -173,12 +173,15 @@ def test_fail_closed_on_malformed_model_output(bank_pdf):
     stub = StubLLMClient({"bank_statement": {"closing_balance": "not-a-number"}})
     doc = intake(bank_pdf, "application/pdf", llm=stub)
 
-    # the whole schema failed -> every field is null, never guessed
-    assert doc.fields["closing_balance"] is None
-    assert doc.fields["account_holder"] is None
-    assert doc.provenance["closing_balance"].region == "unfilled"
-    assert doc.provenance["closing_balance"].confidence is None
+    # schema validation failed -> deterministic "Label: Value" fallback reads the
+    # values straight from the document text (never guessed/fabricated)
     assert "schema_validation_failed" in doc.flags
+    assert "deterministic_fallback" in doc.flags
+    assert doc.fields["closing_balance"] == 18420.55   # from the text
+    assert doc.fields["account_holder"] == "Jane Doe"  # from the text
+    # a label the fallback does not recognize stays null (fail closed)
+    assert doc.fields["min_balance"] is None
+    assert doc.provenance["min_balance"].region == "unfilled"
 
 
 # --- deterministic type matching (no LLM) --------------------------------------
