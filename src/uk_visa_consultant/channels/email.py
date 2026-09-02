@@ -11,6 +11,7 @@ Config comes from ``EMAIL_*`` env vars, each overridable at construction:
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import smtplib
 from dataclasses import dataclass, field
@@ -152,6 +153,7 @@ class EmailAdapter(ChannelAdapter):
         smtp_port: int | None = None,
         from_addr: str | None = None,
         upload_dir: str | Path = "data/uploads",
+        seen_path: str | Path = "data/state/email_seen.json",
     ) -> None:
         self.identity = identity or IdentityResolver()
         self.imap_host = imap_host or os.environ.get("EMAIL_IMAP_HOST", "localhost")
@@ -162,7 +164,21 @@ class EmailAdapter(ChannelAdapter):
         self.smtp_port = smtp_port or int(os.environ.get("EMAIL_SMTP_PORT", "587"))
         self.from_addr = from_addr or os.environ.get("EMAIL_FROM", "consultant@localhost")
         self.upload_dir = Path(upload_dir)
-        self._seen: set[str] = set()
+        self.seen_path = Path(seen_path)
+        self._seen: set[str] = set(self._load_seen())
+
+    def _load_seen(self) -> set[str]:
+        """Persisted set of already-processed message ids (survives restarts)."""
+        if self.seen_path.exists():
+            try:
+                return set(json.loads(self.seen_path.read_text()))
+            except (json.JSONDecodeError, OSError):
+                return set()
+        return set()
+
+    def _persist_seen(self) -> None:
+        self.seen_path.parent.mkdir(parents=True, exist_ok=True)
+        self.seen_path.write_text(json.dumps(sorted(self._seen)))
 
     # -- inbound: pure mapping ---------------------------------------------
     def receive_email(self, raw: bytes) -> Message | None:
@@ -210,7 +226,12 @@ class EmailAdapter(ChannelAdapter):
 
     # -- inbound: IMAP polling ---------------------------------------------
     def receive(self) -> list[Message]:
-        """Poll IMAP for unseen mail and map each to a Message. Network only."""
+        """Poll IMAP for unseen mail, map to Message, mark seen (cross-restart dedup).
+
+        Mark-as-seen is the standard IMAP dedup; the in-memory + persisted
+        ``_seen`` set is a second layer so a re-poll never re-processes a
+        message id that was already handled.
+        """
         import imaplib
 
         messages: list[Message] = []
@@ -224,8 +245,10 @@ class EmailAdapter(ChannelAdapter):
                 if raw is None:
                     continue
                 message = self.receive_email(raw)
+                conn.store(num, "+FLAGS", "\\Seen")
                 if message is not None:
                     messages.append(message)
+        self._persist_seen()
         return messages
 
     # -- outbound ----------------------------------------------------------
@@ -303,7 +326,7 @@ def _coerce_raw(msg_data: object) -> bytes | None:
     """Extract RFC822 bytes from an imaplib fetch result (shapes vary by server)."""
     if isinstance(msg_data, bytes):
         return msg_data
-    if isinstance(msg_data, tuple):
+    if isinstance(msg_data, (tuple, list)):
         for item in msg_data:
             if isinstance(item, bytes):
                 # A single response may be `(header_bytes, body_bytes)`; take the

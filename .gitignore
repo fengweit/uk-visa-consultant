@@ -19,6 +19,7 @@ credentials*.json
 data/clients/
 data/uploads/
 data/corpus/
+data/state/
 *.local.json
 
 # Tooling
