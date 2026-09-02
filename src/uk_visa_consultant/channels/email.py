@@ -176,7 +176,7 @@ class EmailAdapter(ChannelAdapter):
         self.upload_dir = Path(upload_dir)
         self.seen_path = Path(seen_path)
         self._seen: set[str] = set(self._load_seen())
-        self._last_subject: dict[str, str] = {}  # client_id -> inbound subject (for Re:)
+        self._last_subject: dict[str, str] = {}  # thread_root -> inbound subject
 
     def _load_seen(self) -> set[str]:
         """Persisted set of already-processed message ids (survives restarts)."""
@@ -205,9 +205,9 @@ class EmailAdapter(ChannelAdapter):
             return None  # skip our own outbound mail (avoids self-reply loops)
 
         client_id = self.identity.resolve_email(parsed.from_addr)
-        self._last_subject[client_id] = parsed.subject
         msg_id = _derive_message_id(parsed.message_id)
         thread_root = parsed.references[0] if parsed.references else (parsed.in_reply_to or parsed.message_id)
+        self._last_subject[thread_root] = parsed.subject
 
         attachments: list[Attachment] = []
         for filename, mime, payload in parsed.attachments:
@@ -275,8 +275,9 @@ class EmailAdapter(ChannelAdapter):
         if not to:
             return SendReceipt(ok=False, error=f"no recipient email for client {message.client_id}")
         try:
-            orig_subject = self._last_subject.get(message.client_id)
-            subject = f"Re: {orig_subject}" if orig_subject else "UK visa update"
+            subject_key = message.thread_root or message.thread_id or message.client_id
+            orig_subject = self._last_subject.get(subject_key)
+            subject = _reply_subject(orig_subject) if orig_subject is not None else "UK visa update"
             outbound_id = self._smtp_send(
                 to=to,
                 subject=subject,
@@ -340,6 +341,14 @@ class EmailAdapter(ChannelAdapter):
                 smtp.login(self.imap_user, self.imap_password)
             smtp.send_message(msg)
         return str(msg.get("Message-ID")) if msg.get("Message-ID") else None
+
+
+def _reply_subject(subject: str) -> str:
+    """Keep replies in the source thread without accumulating Re: prefixes."""
+    base = subject.strip()
+    while base.lower().startswith("re:"):
+        base = base[3:].strip()
+    return f"Re: {base}" if base else "Re:"
 
 
 def _sanitize_filename(filename: str) -> str:

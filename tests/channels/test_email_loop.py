@@ -122,3 +122,50 @@ def test_skips_own_outbound_mail(tmp_path):
                            seen_path=tmp_path / "seen.json")
     raw = _raw_email(from_addr="fengwei.demo.uk.visa@gmail.com")
     assert adapter.receive_email(raw) is None
+
+
+def _thread_email(subject, msg_id):
+    m = EmailMessage()
+    m["From"] = "same@example.com"
+    m["To"] = "visa@example.com"
+    if subject is not None:
+        m["Subject"] = subject
+    m["Message-ID"] = msg_id
+    m.set_content("hi")
+    return m.as_bytes()
+
+
+def test_subject_is_isolated_per_thread_for_same_sender(monkeypatch, tmp_path):
+    adapter = EmailAdapter(imap_host="x", imap_user="u", imap_password="p",
+                           seen_path=tmp_path / "seen.json")
+    first = adapter.receive_email(_thread_email("Student case", "<student@x>"))
+    second = adapter.receive_email(_thread_email("Visitor case", "<visitor@x>"))
+    assert first is not None and second is not None
+    captured = []
+
+    def fake_smtp_send(self, to, subject, body, attachments, thread_id=None, references=None):
+        captured.append(subject)
+
+    monkeypatch.setattr(EmailAdapter, "_smtp_send", fake_smtp_send)
+    adapter.send(Message(id="r1", client_id=first.client_id, channel=Channel.EMAIL,
+                         body="student", thread_id=first.thread_id, thread_root=first.thread_root))
+    adapter.send(Message(id="r2", client_id=second.client_id, channel=Channel.EMAIL,
+                         body="visitor", thread_id=second.thread_id, thread_root=second.thread_root))
+    assert captured == ["Re: Student case", "Re: Visitor case"]
+
+
+def test_blank_subject_reply_stays_with_blank_subject_thread(monkeypatch, tmp_path):
+    adapter = EmailAdapter(imap_host="x", imap_user="u", imap_password="p",
+                           seen_path=tmp_path / "seen.json")
+    inbound = adapter.receive_email(_thread_email(None, "<blank@x>"))
+    assert inbound is not None
+    captured = {}
+
+    def fake_smtp_send(self, to, subject, body, attachments, thread_id=None, references=None):
+        captured["subject"] = subject
+        captured["thread_id"] = thread_id
+
+    monkeypatch.setattr(EmailAdapter, "_smtp_send", fake_smtp_send)
+    adapter.send(Message(id="r", client_id=inbound.client_id, channel=Channel.EMAIL,
+                         body="hello", thread_id=inbound.thread_id, thread_root=inbound.thread_root))
+    assert captured == {"subject": "Re:", "thread_id": "<blank@x>"}
