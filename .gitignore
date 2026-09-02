@@ -18,6 +18,7 @@ credentials*.json
 # Client data — never commit real applicant materials
 data/clients/
 data/uploads/
+data/corpus/
 *.local.json
 
 # Tooling
